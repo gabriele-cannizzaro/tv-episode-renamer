@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.15"
+VERSION = "1.16"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -314,7 +314,6 @@ class App(ttk.Frame):
         self.season_var = tk.StringVar(value="1")
         self.pad_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Choose a folder and enter a URL to begin.")
-        self.fetch_msg_var = tk.StringVar()  # text beside the Fetch titles button
 
         self._build()
 
@@ -359,11 +358,13 @@ class App(ttk.Frame):
         # together (it spans the two columns they sit in).
         self.fetch_btn = ttk.Button(self, text="Fetch titles", command=self.on_fetch)
         self.fetch_btn.grid(row=1, column=2, columnspan=2, sticky="ew", pady=3)
-        # "Attempting to fetch titles" text, just under the button. width=1 means it
-        # never changes the column widths (it would be clipped if too long).
-        ttk.Label(
-            self, textvariable=self.fetch_msg_var, foreground="gray40", anchor="w", width=1
-        ).grid(row=2, column=2, columnspan=2, sticky="ew", pady=(0, 2))
+        # While titles are being fetched, this text takes the button's place.
+        self.fetching_label = ttk.Label(
+            self, text="Fetching titles...", foreground="gray40", anchor="center",
+            padding=(0, 5),
+        )
+        self.fetching_label.grid(row=1, column=2, columnspan=2, sticky="ew", pady=3)
+        self.fetching_label.grid_remove()  # hidden until a fetch starts
 
         # Titles list
         titles_box = ttk.LabelFrame(self, text="Episode titles", padding=6)
@@ -448,6 +449,15 @@ class App(ttk.Frame):
                     "Invalid season", "Please enter a season number (1 or higher)."
                 )
             return None
+
+    def _show_fetching(self, fetching):
+        """Swap the Fetch titles button for a "Fetching titles..." text, and back."""
+        if fetching:
+            self.fetch_btn.grid_remove()
+            self.fetching_label.grid()
+        else:
+            self.fetching_label.grid_remove()
+            self.fetch_btn.grid()
 
     def _invalidate_preview(self):
         self.plan = None
@@ -575,7 +585,7 @@ class App(ttk.Frame):
         """Fetch in a background thread; the result is handled by _poll_fetch.
         `auto_folder` is set for automatic fetches (triggered by a folder)."""
         self._pending_fetches += 1
-        self.fetch_msg_var.set("Attempting to fetch titles")
+        self._show_fetching(True)
         self._fetch_token += 1
         meta = {"url": url, "token": self._fetch_token, "auto_folder": auto_folder}
         threading.Thread(
@@ -614,11 +624,11 @@ class App(ttk.Frame):
 
         kind, meta = msg[0], msg[1]
 
-        # This fetch is done (whatever the result): drop the "Attempting…" text
-        # once no other fetch is still running.
+        # This fetch is done (whatever the result): bring the button back once
+        # no other fetch is still running.
         self._pending_fetches = max(0, self._pending_fetches - 1)
         if self._pending_fetches == 0:
-            self.fetch_msg_var.set("")
+            self._show_fetching(False)
 
         if meta["auto_folder"] is not None:
             # Automatic fetch: do nothing unless it found titles, and the
