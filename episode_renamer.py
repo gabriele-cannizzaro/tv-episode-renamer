@@ -156,16 +156,37 @@ def natural_key(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
 
+# "Season 3", "Series 3", "S03" ...
+_SEASON_KEYWORD_RE = re.compile(r"(?i)(?:season|series|(?<![a-z])s)[\s._-]*(\d{1,2})(?![a-z\d])")
+# otherwise the first standalone 1-2 digit number, e.g. "04 - Ted Lasso"
+_SEASON_NUMBER_RE = re.compile(r"(?<![A-Za-z\d])(\d{1,2})(?![A-Za-z\d])")
+
+
+def _season_match(name):
+    """The match whose group 1 is the season number inside a folder name."""
+    return _SEASON_KEYWORD_RE.search(name) or _SEASON_NUMBER_RE.search(name)
+
+
 def guess_season(folder):
     """Guess a season number from a folder's name; 1 if none is found."""
     name = os.path.basename(os.path.normpath(folder))
-    # "Season 3", "Series 3", "S03" ...
-    m = re.search(r"(?i)(?:season|series|(?<![a-z])s)[\s._-]*(\d{1,2})(?![a-z\d])", name)
-    if not m:  # otherwise the first standalone 1-2 digit number, e.g. "04 - Ted Lasso"
-        m = re.search(r"(?<![A-Za-z\d])(\d{1,2})(?![A-Za-z\d])", name)
+    m = _season_match(name)
     if m and int(m.group(1)) >= 1:
         return int(m.group(1))
     return 1
+
+
+def next_season_folder(folder):
+    """Add 1 to the season number in the last part of the path, keeping any
+    zero padding: '.../04 - Ted Lasso' -> '.../05 - Ted Lasso'. None if the
+    folder name has no season number."""
+    head, sep, name = folder.strip().rstrip("/").rpartition("/")
+    m = _season_match(name)
+    if not m:
+        return None
+    digits = m.group(1)
+    new_digits = str(int(digits) + 1).zfill(len(digits))
+    return head + sep + name[: m.start(1)] + new_digits + name[m.end(1):]
 
 
 def pascal_case(text):
@@ -262,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.9"
+VERSION = "1.10"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -309,7 +330,10 @@ class App(ttk.Frame):
 
         ttk.Label(self, text="Folder:").grid(row=0, column=0, sticky="w", pady=3)
         ttk.Entry(self, textvariable=self.folder_var).grid(
-            row=0, column=1, columnspan=2, sticky="ew", padx=6, pady=3
+            row=0, column=1, sticky="ew", padx=6, pady=3
+        )
+        ttk.Button(self, text="Next", command=self.on_next).grid(
+            row=0, column=2, padx=(0, 4), pady=3
         )
         ttk.Button(self, text="Browse…", command=self.on_browse).grid(
             row=0, column=3, pady=3
@@ -502,6 +526,20 @@ class App(ttk.Frame):
         folder = filedialog.askdirectory(title="Choose the folder containing the episodes")
         if folder:
             self.folder_var.set(folder)
+
+    def on_next(self):
+        """Move to the next season's folder (season number in the path + 1)."""
+        folder = self.folder_var.get().strip()
+        if not folder:
+            self.status_var.set("Choose a folder first.")
+            return
+        new = next_season_folder(folder)
+        if new is None:
+            self.status_var.set("Couldn't find a season number in the folder name.")
+        elif not os.path.isdir(new):
+            self.status_var.set(f"Next season's folder not found: {new}")
+        else:
+            self.folder_var.set(new)  # also pre-sets the season and fetches the titles
 
     def on_fetch(self):
         url = self.url_var.get().strip()
