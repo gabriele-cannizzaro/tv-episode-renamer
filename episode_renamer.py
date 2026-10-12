@@ -283,13 +283,14 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.17"
+VERSION = "1.18"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
 
 CHECKED = "☑"
 UNCHECKED = "☐"
+MIXED = "▣"  # header box when only some titles are ticked
 
 
 class App(ttk.Frame):
@@ -372,24 +373,21 @@ class App(ttk.Frame):
         self.titles_tree = self._make_tree(
             titles_box,
             [
-                ("chk", "Use", 50, "center"),
+                ("chk", UNCHECKED, 50, "center"),  # header is a master checkbox
                 ("ep", "Episode", 80, "center"),
                 ("title", "Title", 460, "w"),
             ],
         )
         self.titles_tree.bind("<Button-1>", self._on_titles_click)
         self.titles_tree.bind("<space>", self._on_titles_space)
-        bar = ttk.Frame(titles_box)
-        bar.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        ttk.Button(bar, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
-        ttk.Button(bar, text="Select none", command=lambda: self._set_all(False)).pack(
-            side="left", padx=6
-        )
+        # The header box of the first column ticks or unticks every title.
+        self.titles_tree.heading("chk", anchor="center", command=self._toggle_all)
         ttk.Label(
-            bar,
-            text="Click a box (or press Space) to include or skip an episode.",
+            titles_box,
+            text="Click a box (or press Space) to include or skip an episode. "
+            "Click the box in the header to tick or untick all.",
             foreground="gray40",
-        ).pack(side="left", padx=8)
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # Leading-zero option: between the titles list and the preview
         ttk.Checkbutton(
@@ -495,6 +493,23 @@ class App(ttk.Frame):
         self.titles_tree.set(iid, "chk", CHECKED if self.checked[ep] else UNCHECKED)
         self._selection_changed()
 
+    def _toggle_all(self):
+        """Header box: untick everything if everything is ticked, else tick all."""
+        if not self.titles:
+            return
+        self._set_all(not all(self.checked.get(ep, True) for ep, _ in self.titles))
+
+    def _update_master_checkbox(self):
+        """Header box of the first column: ☑ all ticked, ☐ none ticked, ▣ some."""
+        states = [self.checked.get(ep, True) for ep, _ in self.titles]
+        if states and all(states):
+            symbol = CHECKED
+        elif any(states):
+            symbol = MIXED
+        else:
+            symbol = UNCHECKED
+        self.titles_tree.heading("chk", text=symbol)
+
     def _set_all(self, value):
         for ep, _ in self.titles:
             self.checked[ep] = value
@@ -504,6 +519,7 @@ class App(ttk.Frame):
     def _selection_changed(self):
         """Ticking or unticking titles refreshes the preview if one is showing."""
         had_preview = self.plan is not None
+        self._update_master_checkbox()
         self._invalidate_preview()
         self._update_titles_status()
         if had_preview:
@@ -665,6 +681,7 @@ class App(ttk.Frame):
         self.titles_tree.delete(*self.titles_tree.get_children())
         for ep, title in titles:
             self.titles_tree.insert("", "end", iid=str(ep), values=(CHECKED, ep, title))
+        self._update_master_checkbox()
         self._invalidate_preview()
         if titles:
             self.status_var.set(f"Loaded {len(titles)} titles for season {season}.")
