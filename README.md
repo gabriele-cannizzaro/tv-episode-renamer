@@ -59,8 +59,6 @@ chmod +x build_app.command
 
 After that you can double-click it in Finder (it opens in Terminal) or run `./build_app.command`.
 
-Windows is not supported yet: the folder-path handling assumes `/` separators and the file-name cleaning only covers macOS rules.
-
 ## Notes
 
 - The app reads show data from epguides.com. If a show's page is laid out differently, the fetch can come back empty.
