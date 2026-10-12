@@ -229,7 +229,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.2"
+VERSION = "1.3"
 
 CHECKED = "☑"
 UNCHECKED = "☐"
@@ -337,7 +337,7 @@ class App(ttk.Frame):
         self.rename_btn = ttk.Button(
             btns, text="Rename files", command=self.on_rename, state="disabled"
         )
-        self.rename_btn.pack(side="left", padx=8)
+        self.rename_btn.pack(side="right")
 
         ttk.Label(self, textvariable=self.status_var, foreground="gray40").grid(
             row=7, column=0, columnspan=4, sticky="w", pady=(4, 0)
@@ -351,7 +351,7 @@ class App(ttk.Frame):
             parent, columns=[c[0] for c in columns], show="headings", height=6
         )
         for cid, heading, width, anchor in columns:
-            tree.heading(cid, text=heading)
+            tree.heading(cid, text=heading, anchor="w")
             tree.column(cid, width=width, anchor=anchor, stretch=(cid not in ("ep", "chk")))
         sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
