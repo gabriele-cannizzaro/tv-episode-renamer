@@ -319,15 +319,16 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.36"
+VERSION = "1.37"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
 
 STATUS_COLORS = {
     None: "gray40",  # information
-    "progress": "#C0392B",  # operation in progress: red
-    "result": "#2E7D32",  # outcome of an operation: green
+    "progress": "#B8860B",  # operation in progress: yellow (dark goldenrod)
+    "success": "#2E7D32",  # operation succeeded: green
+    "error": "#C0392B",  # operation failed: red
 }
 
 CHECKED = "☑"
@@ -473,8 +474,8 @@ class App(ttk.Frame):
         self.status_label.pack(side="left", fill="x", expand=True)
 
     def _set_status(self, text, kind=None):
-        """Show a message in the status line: kind "progress" (red) for an
-        operation under way, "result" (green) for its outcome, else grey."""
+        """Show a message in the status line: kind "progress" (yellow) for an
+        operation under way, "success" (green), "error" (red), else grey."""
         self.status_var.set(text)
         label = getattr(self, "status_label", None)
         if label is not None:
@@ -672,13 +673,13 @@ class App(ttk.Frame):
         """Move to the next season's folder (season number in the path + 1)."""
         folder = self.folder_var.get().strip()
         if not folder:
-            self._set_status("Choose a folder first.")
+            self._set_status("Choose a folder first.", "error")
             return
         new = next_season_folder(folder)
         if new is None:
-            self._set_status("Couldn't find a season number in the folder name.")
+            self._set_status("Couldn't find a season number in the folder name.", "error")
         elif not os.path.isdir(new):
-            self._set_status(f"Next season's folder not found: {new}")
+            self._set_status(f"Next season's folder not found: {new}", "error")
         else:
             self.folder_var.set(new)  # also pre-sets the season and fetches the titles
 
@@ -763,14 +764,14 @@ class App(ttk.Frame):
 
         self.fetch_btn.config(state="normal")
         if kind == "err":
-            self._set_status("Fetch failed.")
+            self._set_status("Fetch failed.", "error")
             messagebox.showerror("Fetch failed", msg[2])
             return
 
         season, titles = msg[2], msg[3]
         self._apply_titles(season, titles)
         if not titles:
-            self._set_status("No episodes found.")
+            self._set_status("No episodes found.", "error")
             messagebox.showwarning(
                 "No episodes found",
                 f"Couldn't find any episodes for season {season} at that URL.",
@@ -790,7 +791,7 @@ class App(ttk.Frame):
         self._invalidate_preview()
         if titles:
             self._set_status(
-                f"Loaded {plural(len(titles), 'title')} for season {season}.", "result"
+                f"Loaded {plural(len(titles), 'title')} for season {season}.", "success"
             )
             self._build_preview(quiet=True)
 
@@ -899,8 +900,7 @@ class App(ttk.Frame):
         extra = f" in {plural(n_eps, 'episode')}" if n_eps != len(used) else ""
         self._set_status(
             f"{plural(len(used), 'file')}{extra}, {len(changes)} to rename."
-            + (" " + "; ".join(notes) + "." if notes else ""),
-            "result",
+            + (" " + "; ".join(notes) + "." if notes else "")
         )
         self.rename_btn.config(state="normal" if changes else "disabled")
 
@@ -986,10 +986,10 @@ class App(ttk.Frame):
         if self.plan and any(n and n != o for o, n in self.plan):
             self.rename_btn.config(state="normal")
         if error:
-            self._set_status("Rename failed.")
+            self._set_status("Rename failed.", "error")
             messagebox.showerror("Rename failed", error)
         else:
-            self._set_status(f"Renamed {plural(self._rename_total, 'file')}.", "result")
+            self._set_status(f"Renamed {plural(self._rename_total, 'file')}.", "success")
 
 
 def main():
