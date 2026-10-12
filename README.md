@@ -6,8 +6,8 @@ Point it at a folder, and it works out the show and season, fetches the titles, 
 
 ```
 Sample.Show.S03E01.mkv   →   3x01 - The Arrival.mkv
-Sample.Show.S03E01.srt    →   3x01 - The Arrival.srt
-Sample.Show.S03E02.mkv    →   3x02 - Second Thoughts.mkv
+Sample.Show.S03E01.srt   →   3x01 - The Arrival.srt
+Sample.Show.S03E02.mkv   →   3x02 - Second Thoughts.mkv
 ```
 
 ![TV Episode Renamer](docs/screenshot.png)
