@@ -12,6 +12,11 @@ e.g.  3x01 - Smells Like Mean Spirit.mkv      (season padding off)
 
 The episode number is always two digits (01, 02, ... 12).
 
+When a folder is pasted or chosen, the series name is taken from the folder
+above it (e.g. ".../Ted Lasso/04 - Ted Lasso"), turned into an epguides URL
+(https://epguides.com/TedLasso/) and the titles are fetched automatically;
+if that fails nothing happens.
+
 The season number is pre-filled from the chosen folder's name (default 1),
 and each fetched title has a checkbox: unchecked titles are left out, so the
 files are matched to the remaining titles in order.
@@ -24,6 +29,7 @@ import queue
 import re
 import ssl
 import threading
+import unicodedata
 import uuid
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
@@ -161,6 +167,29 @@ def guess_season(folder):
     return 1
 
 
+def pascal_case(text):
+    """'Ted Lasso' -> 'TedLasso'. Only each word's first letter is changed, so
+    'NCIS Los Angeles' -> 'NCISLosAngeles'. Accents, apostrophes and other
+    punctuation are dropped, since the result goes into a URL."""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"['’`]", "", text)  # "Grey's" -> "Greys"
+    words = re.split(r"[^A-Za-z0-9]+", text)
+    return "".join(w[:1].upper() + w[1:] for w in words if w)
+
+
+def series_slug(folder):
+    """Series name for the epguides URL: the text between the last and the
+    last-but-one "/" of the folder path, in Pascal case. None if there is none.
+
+        /Volumes/Hermes/TV Series/Ted Lasso/04 - Ted Lasso  ->  TedLasso
+    """
+    parts = folder.strip().rstrip("/").split("/")
+    if len(parts) < 2:
+        return None
+    return pascal_case(parts[-2]) or None
+
+
 def list_files(folder):
     names = [
         n
@@ -229,7 +258,10 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.5"
+VERSION = "1.6"
+
+AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
+EPGUIDES_BASE = "https://epguides.com/"
 
 CHECKED = "☑"
 UNCHECKED = "☐"
@@ -248,6 +280,8 @@ class App(ttk.Frame):
         self.fetched_season = None
         self.plan = None
         self.queue = queue.Queue()
+        self._fetch_token = 0  # identifies the most recent fetch
+        self._auto_after = None  # pending automatic fetch (after-callback id)
 
         self.folder_var = tk.StringVar()
         self.url_var = tk.StringVar()
@@ -380,10 +414,28 @@ class App(ttk.Frame):
         self.preview_tree.delete(*self.preview_tree.get_children())
 
     def _on_folder_change(self, *_):
-        """Pre-set the season from the folder name once it is a real folder."""
+        """Once the folder is a real one: pre-set the season from its name, then
+        (after a short pause) try to fetch the titles automatically."""
+        if self._auto_after is not None:
+            self.after_cancel(self._auto_after)
+            self._auto_after = None
         folder = self.folder_var.get().strip()
         if folder and os.path.isdir(folder):
             self.season_var.set(str(guess_season(folder)))
+            self._auto_after = self.after(
+                AUTO_FETCH_DELAY_MS, lambda: self._auto_fetch(folder)
+            )
+
+    def _auto_fetch(self, folder):
+        """Guess the epguides URL from the folder path and fetch silently.
+
+        Nothing is shown and nothing changes unless the fetch finds titles."""
+        self._auto_after = None
+        slug = series_slug(folder)
+        season = self._get_season(quiet=True)
+        if not slug or season is None:
+            return
+        self._start_fetch(f"{EPGUIDES_BASE}{slug}/", season, auto_folder=folder)
 
     def _selected_titles(self):
         return [(ep, t) for ep, t in self.titles if self.checked.get(ep, True)]
@@ -453,17 +505,26 @@ class App(ttk.Frame):
 
         self.fetch_btn.config(state="disabled")
         self.status_var.set("Fetching titles…")
+        self._start_fetch(url, season)
+
+    def _start_fetch(self, url, season, auto_folder=None):
+        """Fetch in a background thread; the result is handled by _poll_fetch.
+        `auto_folder` is set for automatic fetches (triggered by a folder)."""
+        self._fetch_token += 1
+        meta = {"url": url, "token": self._fetch_token, "auto_folder": auto_folder}
         threading.Thread(
-            target=self._fetch_worker, args=(url, season), daemon=True
+            target=self._fetch_worker, args=(url, season, meta), daemon=True
         ).start()
         self.after(100, self._poll_fetch)
 
-    def _fetch_worker(self, url, season):
+    def _fetch_worker(self, url, season, meta):
         try:
             html = fetch_html(url)
-            self.queue.put(("ok", season, parse_season_titles(html, season)))
+            self.queue.put(("ok", meta, season, parse_season_titles(html, season)))
         except HTTPError as exc:
-            self.queue.put(("err", f"The server returned an error: HTTP {exc.code}."))
+            self.queue.put(
+                ("err", meta, f"The server returned an error: HTTP {exc.code}.")
+            )
         except URLError as exc:
             reason = exc.reason
             if isinstance(reason, ssl.SSLCertVerificationError):
@@ -474,9 +535,9 @@ class App(ttk.Frame):
                 )
             else:
                 msg = f"Could not reach the site: {reason}"
-            self.queue.put(("err", msg))
+            self.queue.put(("err", meta, msg))
         except Exception as exc:  # noqa: BLE001
-            self.queue.put(("err", f"Unexpected error: {exc}"))
+            self.queue.put(("err", meta, f"Unexpected error: {exc}"))
 
     def _poll_fetch(self):
         try:
@@ -485,13 +546,40 @@ class App(ttk.Frame):
             self.after(100, self._poll_fetch)
             return
 
-        self.fetch_btn.config(state="normal")
-        if msg[0] == "err":
-            self.status_var.set("Fetch failed.")
-            messagebox.showerror("Fetch failed", msg[1])
+        kind, meta = msg[0], msg[1]
+
+        if meta["auto_folder"] is not None:
+            # Automatic fetch: do nothing unless it found titles, and the
+            # folder hasn't changed (and no newer fetch started) meanwhile.
+            if (
+                kind != "ok"
+                or not msg[3]
+                or meta["token"] != self._fetch_token
+                or self.folder_var.get().strip() != meta["auto_folder"]
+            ):
+                return
+            self.url_var.set(meta["url"])
+            self._apply_titles(msg[2], msg[3])
+            self._build_preview(quiet=True)
             return
 
-        _, season, titles = msg
+        self.fetch_btn.config(state="normal")
+        if kind == "err":
+            self.status_var.set("Fetch failed.")
+            messagebox.showerror("Fetch failed", msg[2])
+            return
+
+        season, titles = msg[2], msg[3]
+        self._apply_titles(season, titles)
+        if not titles:
+            self.status_var.set("No episodes found.")
+            messagebox.showwarning(
+                "No episodes found",
+                f"Couldn't find any episodes for season {season} at that URL.",
+            )
+
+    def _apply_titles(self, season, titles):
+        """Show freshly fetched titles (all ticked) and clear the old preview."""
         self.titles = titles
         self.checked = {ep: True for ep, _ in titles}
         self.fetched_season = season if titles else None
@@ -499,15 +587,8 @@ class App(ttk.Frame):
         for ep, title in titles:
             self.titles_tree.insert("", "end", iid=str(ep), values=(CHECKED, ep, title))
         self._invalidate_preview()
-
         if titles:
             self.status_var.set(f"Loaded {len(titles)} titles for season {season}.")
-        else:
-            self.status_var.set("No episodes found.")
-            messagebox.showwarning(
-                "No episodes found",
-                f"Couldn't find any episodes for season {season} at that URL.",
-            )
 
     def on_preview(self):
         self._build_preview()
