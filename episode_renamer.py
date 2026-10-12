@@ -306,7 +306,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.32"
+VERSION = "1.33"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -432,7 +432,11 @@ class App(ttk.Frame):
         btns = ttk.Frame(self)
         btns.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(6, 2))
         self.rename_btn = ttk.Button(
-            btns, text="Rename files", command=self.on_rename, state="disabled"
+            btns,
+            text="Rename files",
+            command=self.on_rename,
+            state="disabled",
+            default="active",  # blue "default button" look on macOS
         )
         self.rename_btn.pack(side="right")
         # Status text, where the Preview button used to be. width=1 + expand lets
