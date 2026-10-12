@@ -262,10 +262,14 @@ def build_plan(files, titles, season, pad_season, skip=()):
     return [(old, new_names.get(old)) for old in files]
 
 
-def apply_renames(folder, renames):
+def apply_renames(folder, renames, progress=None):
     """
     Rename files safely. `renames` is a list of (old, new) with old != new.
     Returns None on success, or an error message (changes are rolled back).
+
+    `progress(kind, old, new)` is called as it goes: ("done", old, new) when a
+    file has its final name, and ("revert", old, new) for each such file that
+    is put back during a rollback.
     """
     existing = {n.lower() for n in os.listdir(folder)}
     sources = {o.lower() for o, _ in renames}
@@ -288,6 +292,8 @@ def apply_renames(folder, renames):
         for it in items:
             os.rename(os.path.join(folder, it[0]), os.path.join(folder, it[2]))
             it[3] = "final"
+            if progress:
+                progress("done", it[1], it[2])
     except Exception as exc:  # roll back whatever was done
         for tmp, old, new, state in items:
             try:
@@ -295,6 +301,8 @@ def apply_renames(folder, renames):
                     os.rename(os.path.join(folder, tmp), os.path.join(folder, old))
                 elif state == "final":
                     os.rename(os.path.join(folder, new), os.path.join(folder, old))
+                    if progress:
+                        progress("revert", old, new)
             except OSError:
                 pass
         return f"{exc}\n\nAny changes made so far were rolled back."
@@ -306,7 +314,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.34"
+VERSION = "1.35"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -334,6 +342,9 @@ class App(ttk.Frame):
         self._pending_fetches = 0  # fetches started but not yet finished
 
         self.file_checked = {}  # file name -> ticked? (missing = ticked)
+        self._renaming = False  # a rename is running in the background
+        self._refresh_after_rename = False
+        self.rename_queue = queue.Queue()
         self.folder_var = tk.StringVar()
         self.url_var = tk.StringVar()
         self.season_var = tk.StringVar(value="1")
@@ -550,6 +561,10 @@ class App(ttk.Frame):
         """Ticking or unticking titles refreshes the preview if one is showing."""
         had_preview = self.plan is not None
         self._update_master_checkbox()
+        if self._renaming:
+            self._refresh_after_rename = True
+            self._update_titles_status()
+            return
         self._invalidate_preview()
         self._update_titles_status()
         if had_preview or (self.titles and os.path.isdir(self.folder_var.get().strip())):
@@ -557,6 +572,9 @@ class App(ttk.Frame):
 
     def _on_pad_change(self, *_):
         """Changing the leading-zero option refreshes the preview if one is showing."""
+        if self._renaming:
+            self._refresh_after_rename = True
+            return
         had_preview = self.plan is not None
         self._invalidate_preview()
         if had_preview:
@@ -582,7 +600,7 @@ class App(ttk.Frame):
         return None
 
     def _toggle_file(self, iid):
-        if not self.plan:
+        if not self.plan or self._renaming:
             return
         name = self.plan[int(iid)][0]
         self.file_checked[name] = not self.file_checked.get(name, True)
@@ -768,6 +786,9 @@ class App(ttk.Frame):
             else:
                 getattr(messagebox, kind)(title, message)
 
+        if self._renaming:  # don't touch the table mid-rename; refresh afterwards
+            self._refresh_after_rename = True
+            return
         if not self.titles:
             problem("showinfo", "No titles", "Fetch the titles first.")
             return
@@ -866,15 +887,77 @@ class App(ttk.Frame):
         ):
             return
 
-        error = apply_renames(folder, changes)
+        # Rename in the background; each row of the preview is updated as its
+        # file gets its new name.
+        self._renaming = True
+        self._refresh_after_rename = False
+        self.rename_btn.config(state="disabled")
+        self._rename_total = len(changes)
+        self._rename_done = 0
+        self._rename_index = {old: i for i, (old, _new) in enumerate(self.plan)}
+        self.status_var.set(f"Renaming… 0 of {self._rename_total}")
+        threading.Thread(
+            target=self._rename_worker, args=(folder, changes), daemon=True
+        ).start()
+        self.after(50, self._poll_rename)
+
+    def _rename_worker(self, folder, changes):
+        def progress(kind, old, new):
+            self.rename_queue.put((kind, old, new))
+
+        try:
+            error = apply_renames(folder, changes, progress)
+        except Exception as exc:  # e.g. the folder can't be listed
+            error = str(exc)
+        self.rename_queue.put(("finished", error, None))
+
+    def _poll_rename(self):
+        finished = None
+        while True:
+            try:
+                kind, a, b = self.rename_queue.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "finished":
+                finished = (a,)
+                break
+            self._rename_row_event(kind, a, b)
+        if finished is None:
+            self.after(50, self._poll_rename)
+            return
+        self._finish_rename(finished[0])
+
+    def _rename_row_event(self, kind, old, new):
+        """Show one finished (or rolled-back) rename in the preview table."""
+        self._rename_done += 1 if kind == "done" else -1
+        self.status_var.set(f"Renaming… {self._rename_done} of {self._rename_total}")
+        i = self._rename_index.get(old)
+        if i is None or not self.plan or i >= len(self.plan):
+            return  # the preview was replaced meanwhile
+        iid = str(i)
+        if not self.preview_tree.exists(iid):
+            return
+        if kind == "done":
+            self.plan[i] = (new, new)  # the file's current name is now the new one
+            self.preview_tree.item(iid, values=(CHECKED, new, new), tags=("skip",))
+            self.preview_tree.see(iid)
+        else:
+            self.plan[i] = (old, new)
+            self.preview_tree.item(iid, values=(CHECKED, old, new), tags=())
+
+    def _finish_rename(self, error):
+        self._renaming = False
+        if self._refresh_after_rename or self.plan is None:
+            self._invalidate_preview()
+            if self.titles and os.path.isdir(self.folder_var.get().strip()):
+                self._build_preview(quiet=True)
+        if self.plan and any(n and n != o for o, n in self.plan):
+            self.rename_btn.config(state="normal")
         if error:
             self.status_var.set("Rename failed.")
             messagebox.showerror("Rename failed", error)
-            return
-
-        self._invalidate_preview()
-        self._build_preview(quiet=True)  # show the folder as it is now
-        self.status_var.set(f"Renamed {len(changes)} file(s). Preview refreshed.")
+        else:
+            self.status_var.set(f"Renamed {self._rename_total} file(s).")
 
 
 def main():
