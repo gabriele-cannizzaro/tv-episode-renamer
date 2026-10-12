@@ -293,7 +293,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.28"
+VERSION = "1.29"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -807,7 +807,8 @@ class App(ttk.Frame):
             return
 
         self._invalidate_preview()
-        self.status_var.set(f"Renamed {len(changes)} file(s).")
+        self._build_preview(quiet=True)  # show the folder as it is now
+        self.status_var.set(f"Renamed {len(changes)} file(s). Preview refreshed.")
         messagebox.showinfo("Done", f"Renamed {len(changes)} file(s).")
 
 
