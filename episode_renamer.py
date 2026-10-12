@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.22"
+VERSION = "1.23"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -334,9 +334,9 @@ class App(ttk.Frame):
         ttk.Entry(self, textvariable=self.folder_var).grid(
             row=0, column=1, sticky="ew", padx=6, pady=3
         )
-        ttk.Button(self, text="Next", command=self.on_next).grid(
-            row=0, column=2, sticky="ew", padx=(0, 4), pady=3
-        )
+        self.next_btn = ttk.Button(self, text="Next", command=self.on_next)
+        self.next_btn.grid(row=0, column=2, sticky="ew", padx=(0, 4), pady=3)
+        self._update_next_state()
         ttk.Button(self, text="Browse…", command=self.on_browse).grid(
             row=0, column=3, sticky="ew", pady=3
         )
@@ -459,6 +459,7 @@ class App(ttk.Frame):
             self.after_cancel(self._auto_after)
             self._auto_after = None
         folder = self.folder_var.get().strip()
+        self._update_next_state()
         if folder and os.path.isdir(folder):
             self.season_var.set(str(guess_season(folder)))
             if self.titles:  # titles already loaded: preview them for this folder
@@ -556,6 +557,13 @@ class App(ttk.Frame):
         folder = filedialog.askdirectory(title="Choose the folder containing the episodes")
         if folder:
             self.folder_var.set(folder)
+
+    def _update_next_state(self):
+        """The Next button is only usable when the folder input has a value."""
+        btn = getattr(self, "next_btn", None)
+        if btn is not None:
+            has_folder = bool(self.folder_var.get().strip())
+            btn.state(["!disabled"] if has_folder else ["disabled"])
 
     def on_next(self):
         """Move to the next season's folder (season number in the path + 1)."""
