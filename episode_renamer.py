@@ -164,6 +164,11 @@ def sanitize_title(title):
     return title.strip(" .")
 
 
+def plural(n, singular, plural_form=None):
+    """'1 file' / '2 files' (the count included)."""
+    return f"{n} {singular if n == 1 else (plural_form or singular + 's')}"
+
+
 def natural_key(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
@@ -314,10 +319,16 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.35"
+VERSION = "1.36"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
+
+STATUS_COLORS = {
+    None: "gray40",  # information
+    "progress": "#C0392B",  # operation in progress: red
+    "result": "#2E7D32",  # outcome of an operation: green
+}
 
 CHECKED = "☑"
 UNCHECKED = "☐"
@@ -452,9 +463,22 @@ class App(ttk.Frame):
         self.rename_btn.pack(side="right")
         # Status text, where the Preview button used to be. width=1 + expand lets
         # it fill the free space and be clipped (rather than push the window) if long.
-        ttk.Label(
-            btns, textvariable=self.status_var, foreground="gray40", anchor="w", width=1
-        ).pack(side="left", fill="x", expand=True)
+        self.status_label = ttk.Label(
+            btns,
+            textvariable=self.status_var,
+            foreground=STATUS_COLORS[None],
+            anchor="w",
+            width=1,
+        )
+        self.status_label.pack(side="left", fill="x", expand=True)
+
+    def _set_status(self, text, kind=None):
+        """Show a message in the status line: kind "progress" (red) for an
+        operation under way, "result" (green) for its outcome, else grey."""
+        self.status_var.set(text)
+        label = getattr(self, "status_label", None)
+        if label is not None:
+            label.configure(foreground=STATUS_COLORS[kind])
 
     @staticmethod
     def _make_tree(parent, columns):
@@ -582,9 +606,9 @@ class App(ttk.Frame):
 
     def _update_titles_status(self):
         if self.titles:
-            self.status_var.set(
-                f"{len(self._selected_titles())} of {len(self.titles)} titles selected "
-                f"for season {self.fetched_season}."
+            self._set_status(
+                f"{len(self._selected_titles())} of {plural(len(self.titles), 'title')} "
+                f"selected for season {self.fetched_season}."
             )
 
     def _on_titles_click(self, event):
@@ -648,13 +672,13 @@ class App(ttk.Frame):
         """Move to the next season's folder (season number in the path + 1)."""
         folder = self.folder_var.get().strip()
         if not folder:
-            self.status_var.set("Choose a folder first.")
+            self._set_status("Choose a folder first.")
             return
         new = next_season_folder(folder)
         if new is None:
-            self.status_var.set("Couldn't find a season number in the folder name.")
+            self._set_status("Couldn't find a season number in the folder name.")
         elif not os.path.isdir(new):
-            self.status_var.set(f"Next season's folder not found: {new}")
+            self._set_status(f"Next season's folder not found: {new}")
         else:
             self.folder_var.set(new)  # also pre-sets the season and fetches the titles
 
@@ -671,7 +695,7 @@ class App(ttk.Frame):
             return
 
         self.fetch_btn.config(state="disabled")
-        self.status_var.set("Fetching titles…")
+        self._set_status("Fetching titles…", "progress")
         self._start_fetch(url, season)
 
     def _start_fetch(self, url, season, auto_folder=None):
@@ -739,14 +763,14 @@ class App(ttk.Frame):
 
         self.fetch_btn.config(state="normal")
         if kind == "err":
-            self.status_var.set("Fetch failed.")
+            self._set_status("Fetch failed.")
             messagebox.showerror("Fetch failed", msg[2])
             return
 
         season, titles = msg[2], msg[3]
         self._apply_titles(season, titles)
         if not titles:
-            self.status_var.set("No episodes found.")
+            self._set_status("No episodes found.")
             messagebox.showwarning(
                 "No episodes found",
                 f"Couldn't find any episodes for season {season} at that URL.",
@@ -765,7 +789,9 @@ class App(ttk.Frame):
         self._update_master_checkbox()
         self._invalidate_preview()
         if titles:
-            self.status_var.set(f"Loaded {len(titles)} titles for season {season}.")
+            self._set_status(
+                f"Loaded {plural(len(titles), 'title')} for season {season}.", "result"
+            )
             self._build_preview(quiet=True)
 
     def on_preview(self):
@@ -782,7 +808,7 @@ class App(ttk.Frame):
         def problem(kind, title, message):
             self._invalidate_preview()
             if quiet:
-                self.status_var.set(message)
+                self._set_status(message)
             else:
                 getattr(messagebox, kind)(title, message)
 
@@ -796,7 +822,7 @@ class App(ttk.Frame):
         if season is None:
             self._invalidate_preview()
             if quiet:
-                self.status_var.set("Please enter a season number (1 or higher).")
+                self._set_status("Please enter a season number (1 or higher).")
             return
         if season != self.fetched_season:
             problem(
@@ -863,14 +889,18 @@ class App(ttk.Frame):
         n_eps = len(group_files(used))
         if n_eps > len(titles):
             notes.append(
-                f"{n_eps - len(titles)} episode(s) have no matching title and will be skipped"
+                f"{plural(n_eps - len(titles), 'episode')} "
+                f"{'has' if n_eps - len(titles) == 1 else 'have'} "
+                "no matching title and will be skipped"
             )
         elif len(titles) > n_eps:
-            notes.append(f"{len(titles) - n_eps} title(s) have no file")
-        extra = f" in {n_eps} episode(s)" if n_eps != len(used) else ""
-        self.status_var.set(
-            f"{len(used)} file(s){extra}, {len(changes)} to rename."
-            + (" " + "; ".join(notes) + "." if notes else "")
+            gap = len(titles) - n_eps
+            notes.append(f"{plural(gap, 'title')} {'has' if gap == 1 else 'have'} no file")
+        extra = f" in {plural(n_eps, 'episode')}" if n_eps != len(used) else ""
+        self._set_status(
+            f"{plural(len(used), 'file')}{extra}, {len(changes)} to rename."
+            + (" " + "; ".join(notes) + "." if notes else ""),
+            "result",
         )
         self.rename_btn.config(state="normal" if changes else "disabled")
 
@@ -883,7 +913,7 @@ class App(ttk.Frame):
             return
         if not messagebox.askyesno(
             "Rename files",
-            f"Rename {len(changes)} file(s) in:\n{folder}\n\nThis cannot be undone. Continue?",
+            f"Rename {plural(len(changes), 'file')} in:\n{folder}\n\nThis cannot be undone. Continue?",
         ):
             return
 
@@ -895,7 +925,7 @@ class App(ttk.Frame):
         self._rename_total = len(changes)
         self._rename_done = 0
         self._rename_index = {old: i for i, (old, _new) in enumerate(self.plan)}
-        self.status_var.set(f"Renaming… 0 of {self._rename_total}")
+        self._set_status(f"Renaming… 0 of {self._rename_total}", "progress")
         threading.Thread(
             target=self._rename_worker, args=(folder, changes), daemon=True
         ).start()
@@ -930,7 +960,9 @@ class App(ttk.Frame):
     def _rename_row_event(self, kind, old, new):
         """Show one finished (or rolled-back) rename in the preview table."""
         self._rename_done += 1 if kind == "done" else -1
-        self.status_var.set(f"Renaming… {self._rename_done} of {self._rename_total}")
+        self._set_status(
+            f"Renaming… {self._rename_done} of {self._rename_total}", "progress"
+        )
         i = self._rename_index.get(old)
         if i is None or not self.plan or i >= len(self.plan):
             return  # the preview was replaced meanwhile
@@ -954,10 +986,10 @@ class App(ttk.Frame):
         if self.plan and any(n and n != o for o, n in self.plan):
             self.rename_btn.config(state="normal")
         if error:
-            self.status_var.set("Rename failed.")
+            self._set_status("Rename failed.")
             messagebox.showerror("Rename failed", error)
         else:
-            self.status_var.set(f"Renamed {self._rename_total} file(s).")
+            self._set_status(f"Renamed {plural(self._rename_total, 'file')}.", "result")
 
 
 def main():
