@@ -12,7 +12,7 @@ Sample.Show.S03E02.mkv   →   3x02 - Second Thoughts.mkv
 
 ![TV Episode Renamer](docs/screenshot.png)
 
-*Version 1.37, shown with sample data. The screenshot was rendered on Linux; on a Mac the app uses the native look.*
+*Version 1.39, shown with sample data. The screenshot was rendered on Linux; on a Mac the app uses the native look.*
 
 ## Features
 
