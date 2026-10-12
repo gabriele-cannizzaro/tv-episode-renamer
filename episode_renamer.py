@@ -29,6 +29,7 @@ import queue
 import re
 import ssl
 import threading
+import traceback
 import unicodedata
 import uuid
 from html.parser import HTMLParser
@@ -258,7 +259,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.6"
+VERSION = "1.7"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -560,7 +561,6 @@ class App(ttk.Frame):
                 return
             self.url_var.set(meta["url"])
             self._apply_titles(msg[2], msg[3])
-            self._build_preview(quiet=True)
             return
 
         self.fetch_btn.config(state="normal")
@@ -579,7 +579,9 @@ class App(ttk.Frame):
             )
 
     def _apply_titles(self, season, titles):
-        """Show freshly fetched titles (all ticked) and clear the old preview."""
+        """Show freshly fetched titles (all ticked), then refresh the preview.
+
+        Used after every successful fetch, automatic or via the button."""
         self.titles = titles
         self.checked = {ep: True for ep, _ in titles}
         self.fetched_season = season if titles else None
@@ -589,6 +591,7 @@ class App(ttk.Frame):
         self._invalidate_preview()
         if titles:
             self.status_var.set(f"Loaded {len(titles)} titles for season {season}.")
+            self._build_preview(quiet=True)
 
     def on_preview(self):
         self._build_preview()
@@ -596,13 +599,16 @@ class App(ttk.Frame):
     def _build_preview(self, quiet=False):
         """Fill the preview table.
 
-        With quiet=True (automatic refresh after a checkbox change) a problem
-        just clears the preview instead of showing a dialog.
+        With quiet=True (automatic refresh after a fetch or a checkbox change)
+        a problem clears the preview and is explained in the status line
+        instead of in a dialog.
         """
 
         def problem(kind, title, message):
             self._invalidate_preview()
-            if not quiet:
+            if quiet:
+                self.status_var.set(message)
+            else:
                 getattr(messagebox, kind)(title, message)
 
         if not self.titles:
@@ -611,6 +617,8 @@ class App(ttk.Frame):
         season = self._get_season(quiet=quiet)
         if season is None:
             self._invalidate_preview()
+            if quiet:
+                self.status_var.set("Please enter a season number (1 or higher).")
             return
         if season != self.fetched_season:
             problem(
@@ -622,6 +630,9 @@ class App(ttk.Frame):
             return
 
         folder = self.folder_var.get().strip()
+        if quiet and not folder:  # no folder chosen yet: nothing to preview
+            self._invalidate_preview()
+            return
         if not folder or not os.path.isdir(folder):
             problem("showerror", "Invalid folder", "Please choose a valid folder.")
             return
@@ -695,6 +706,17 @@ class App(ttk.Frame):
 def main():
     root = tk.Tk()
     root.title(f"TV Episode Renamer v{VERSION}")
+
+    def report_error(exc_type, exc, tb):
+        # Errors inside Tk callbacks are otherwise swallowed silently when the
+        # app is launched by double-clicking, which just looks like "nothing
+        # happened". Show them instead.
+        traceback.print_exception(exc_type, exc, tb)
+        messagebox.showerror(
+            "Unexpected error", "".join(traceback.format_exception(exc_type, exc, tb))[-1500:]
+        )
+
+    root.report_callback_exception = report_error
     root.geometry("820x720")
     root.minsize(640, 560)
     App(root)
