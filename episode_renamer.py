@@ -109,6 +109,18 @@ def fetch_html(url):
     return raw.decode(charset, errors="replace")
 
 
+# " (90 mins)" / " (1 min)" / " (1 hr 30 mins)" appended to a title
+_DURATION_RE = re.compile(
+    r"\s*\(\s*(?:\d+\s*(?:hrs?|hours?)\s*)?\d+\s*(?:mins?|minutes?)\s*\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def strip_duration(title):
+    """Remove a trailing running time such as ' (90 mins)' from a title."""
+    return _DURATION_RE.sub("", title).strip() or title
+
+
 def parse_season_titles(html, season):
     """Return a sorted list of (episode_number, title) for the given season."""
     parser = _TableParser()
@@ -126,14 +138,14 @@ def parse_season_titles(html, season):
             if not title:
                 title = next((c for c in reversed(row[i + 1:]) if c), "")
             if s == season and title:
-                found.setdefault(e, title)
+                found.setdefault(e, strip_duration(title))
             break
 
     if not found:  # fallback: plain-text layout
         for line in "".join(parser.text).splitlines():
             m = TEXT_LINE_RE.search(line)
             if m and int(m.group(1)) == season:
-                found.setdefault(int(m.group(2)), m.group(3).strip())
+                found.setdefault(int(m.group(2)), strip_duration(m.group(3).strip()))
 
     return sorted(found.items())
 
@@ -293,7 +305,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.30"
+VERSION = "1.31"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
