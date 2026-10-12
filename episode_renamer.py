@@ -229,7 +229,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.4"
+VERSION = "1.5"
 
 CHECKED = "☑"
 UNCHECKED = "☐"
@@ -310,7 +310,7 @@ class App(ttk.Frame):
         self.titles_tree.bind("<Button-1>", self._on_titles_click)
         self.titles_tree.bind("<space>", self._on_titles_space)
         bar = ttk.Frame(titles_box)
-        bar.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        bar.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Button(bar, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
         ttk.Button(bar, text="Select none", command=lambda: self._set_all(False)).pack(
             side="left", padx=6
@@ -345,52 +345,33 @@ class App(ttk.Frame):
 
     @staticmethod
     def _make_tree(parent, columns):
-        """A table with left-aligned headers.
-
-        macOS ignores left-alignment on the native Treeview headings, so the
-        table is drawn without them and a row of labels, kept in step with the
-        column widths, is shown above it instead.
-        """
-        header_h = 24
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
-        header = ttk.Frame(parent, height=header_h)
-        header.grid(row=0, column=0, sticky="ew")
+        parent.rowconfigure(0, weight=1)
         tree = ttk.Treeview(
-            parent, columns=[c[0] for c in columns], show="", height=6
+            parent, columns=[c[0] for c in columns], show="headings", height=6
         )
-        labels = {}
         for cid, heading, width, anchor in columns:
+            tree.heading(cid, text=heading, anchor="w")
             tree.column(cid, width=width, anchor=anchor, stretch=(cid not in ("ep", "chk")))
-            labels[cid] = ttk.Label(
-                header, text=heading, anchor="w", padding=(6, 3), font="TkHeadingFont"
-            )
         sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
-        tree.grid(row=1, column=0, sticky="nsew")
-        sb.grid(row=1, column=1, sticky="ns")
-
-        def sync_headers():
-            x = 0
-            for cid, _heading, _width, _anchor in columns:
-                w = int(tree.column(cid, option="width"))
-                labels[cid].place(x=x, y=0, width=w, height=header_h)
-                x += w
-
-        tree.bind("<Configure>", lambda _e: tree.after_idle(sync_headers), add="+")
-        tree.after(100, sync_headers)
+        tree.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
         return tree
 
     # ---- helpers ---------------------------------------------------------
 
-    def _get_season(self):
+    def _get_season(self, quiet=False):
         try:
             season = int(self.season_var.get().strip())
             if season < 1:
                 raise ValueError
             return season
         except ValueError:
-            messagebox.showerror("Invalid season", "Please enter a season number (1 or higher).")
+            if not quiet:
+                messagebox.showerror(
+                    "Invalid season", "Please enter a season number (1 or higher)."
+                )
             return None
 
     def _invalidate_preview(self):
@@ -411,15 +392,21 @@ class App(ttk.Frame):
         ep = int(iid)
         self.checked[ep] = not self.checked.get(ep, True)
         self.titles_tree.set(iid, "chk", CHECKED if self.checked[ep] else UNCHECKED)
-        self._invalidate_preview()
-        self._update_titles_status()
+        self._selection_changed()
 
     def _set_all(self, value):
         for ep, _ in self.titles:
             self.checked[ep] = value
             self.titles_tree.set(str(ep), "chk", CHECKED if value else UNCHECKED)
+        self._selection_changed()
+
+    def _selection_changed(self):
+        """Ticking or unticking titles refreshes the preview if one is showing."""
+        had_preview = self.plan is not None
         self._invalidate_preview()
         self._update_titles_status()
+        if had_preview:
+            self._build_preview(quiet=True)
 
     def _update_titles_status(self):
         if self.titles:
@@ -523,14 +510,30 @@ class App(ttk.Frame):
             )
 
     def on_preview(self):
+        self._build_preview()
+
+    def _build_preview(self, quiet=False):
+        """Fill the preview table.
+
+        With quiet=True (automatic refresh after a checkbox change) a problem
+        just clears the preview instead of showing a dialog.
+        """
+
+        def problem(kind, title, message):
+            self._invalidate_preview()
+            if not quiet:
+                getattr(messagebox, kind)(title, message)
+
         if not self.titles:
-            messagebox.showinfo("No titles", "Fetch the titles first.")
+            problem("showinfo", "No titles", "Fetch the titles first.")
             return
-        season = self._get_season()
+        season = self._get_season(quiet=quiet)
         if season is None:
+            self._invalidate_preview()
             return
         if season != self.fetched_season:
-            messagebox.showinfo(
+            problem(
+                "showinfo",
                 "Season changed",
                 f"The titles shown are for season {self.fetched_season}. "
                 "Click \"Fetch titles\" again after changing the season.",
@@ -539,20 +542,20 @@ class App(ttk.Frame):
 
         folder = self.folder_var.get().strip()
         if not folder or not os.path.isdir(folder):
-            messagebox.showerror("Invalid folder", "Please choose a valid folder.")
+            problem("showerror", "Invalid folder", "Please choose a valid folder.")
             return
         try:
             files = list_files(folder)
         except OSError as exc:
-            messagebox.showerror("Cannot read folder", str(exc))
+            problem("showerror", "Cannot read folder", str(exc))
             return
         if not files:
-            messagebox.showinfo("Empty folder", "No files were found in that folder.")
+            problem("showinfo", "Empty folder", "No files were found in that folder.")
             return
 
         titles = self._selected_titles()
         if not titles:
-            messagebox.showinfo("No titles selected", "Tick at least one episode title.")
+            problem("showinfo", "No titles selected", "Tick at least one episode title.")
             return
 
         self.plan = build_plan(files, titles, season, self.pad_var.get())
