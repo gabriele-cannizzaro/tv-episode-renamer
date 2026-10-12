@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.20"
+VERSION = "1.21"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -382,12 +382,6 @@ class App(ttk.Frame):
         self.titles_tree.bind("<space>", self._on_titles_space)
         # The header box of the first column ticks or unticks every title.
         self.titles_tree.heading("chk", anchor="center", command=self._toggle_all)
-        ttk.Label(
-            titles_box,
-            text="Click a box (or press Space) to include or skip an episode. "
-            "Click the box in the header to tick or untick all.",
-            foreground="gray40",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # Leading-zero option: between the titles list and the preview
         ttk.Checkbutton(
@@ -813,12 +807,6 @@ def main():
     root.report_callback_exception = report_error
     root.geometry("820x720")
     root.minsize(640, 560)
-    try:
-        # The native macOS (Aqua) theme ignores left-aligned table headers;
-        # the "clam" theme honours them.
-        ttk.Style(root).theme_use("clam")
-    except tk.TclError:
-        pass
     App(root)
     root.mainloop()
 
