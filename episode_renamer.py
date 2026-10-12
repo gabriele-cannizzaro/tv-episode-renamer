@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.10"
+VERSION = "1.11"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -312,12 +312,13 @@ class App(ttk.Frame):
         self.url_var = tk.StringVar()
         self.season_var = tk.StringVar(value="1")
         self.pad_var = tk.BooleanVar(value=False)
-        self.status_var = tk.StringVar(value="Choose a folder and enter a URL to begin.")
+        self.status_var = tk.StringVar(value="Ready. Choose a folder to begin.")
 
         self._build()
+        self._build_statusbar()
 
-        for var in (self.folder_var, self.season_var):
-            var.trace_add("write", lambda *_: self._invalidate_preview())
+        self.folder_var.trace_add("write", lambda *_: self._invalidate_preview())
+        self.season_var.trace_add("write", self._on_season_change)
         self.folder_var.trace_add("write", self._on_folder_change)
         self.pad_var.trace_add("write", self._on_pad_change)
 
@@ -402,9 +403,16 @@ class App(ttk.Frame):
         )
         self.rename_btn.pack(side="right")
 
-        ttk.Label(self, textvariable=self.status_var, foreground="gray40").grid(
-            row=7, column=0, columnspan=4, sticky="w", pady=(4, 0)
-        )
+    def _build_statusbar(self):
+        """A status bar along the bottom edge of the window."""
+        bar = ttk.Frame(self.master)
+        bar.grid(row=1, column=0, sticky="ew")
+        bar.columnconfigure(0, weight=1)
+        ttk.Separator(bar, orient="horizontal").grid(row=0, column=0, sticky="ew")
+        # width=1 stops a long message from widening the window (it is clipped instead)
+        ttk.Label(
+            bar, textvariable=self.status_var, anchor="w", width=1, padding=(12, 4)
+        ).grid(row=1, column=0, sticky="ew")
 
     @staticmethod
     def _make_tree(parent, columns):
@@ -442,6 +450,14 @@ class App(ttk.Frame):
         self.rename_btn.config(state="disabled")
         self.preview_tree.delete(*self.preview_tree.get_children())
 
+    def _on_season_change(self, *_):
+        self._invalidate_preview()
+        season = self._get_season(quiet=True)
+        if season is not None and self.titles and season != self.fetched_season:
+            self.status_var.set(
+                f"Season set to {season}. Click Fetch titles to load its episodes."
+            )
+
     def _on_folder_change(self, *_):
         """Once the folder is a real one: pre-set the season from its name, then
         (after a short pause) try to fetch the titles automatically."""
@@ -450,20 +466,26 @@ class App(ttk.Frame):
             self._auto_after = None
         folder = self.folder_var.get().strip()
         if folder and os.path.isdir(folder):
-            self.season_var.set(str(guess_season(folder)))
+            season = guess_season(folder)
+            self.season_var.set(str(season))
+            self.status_var.set(f"Folder selected: season {season}.")
             self._auto_after = self.after(
                 AUTO_FETCH_DELAY_MS, lambda: self._auto_fetch(folder)
             )
 
     def _auto_fetch(self, folder):
-        """Guess the epguides URL from the folder path and fetch silently.
-
-        Nothing is shown and nothing changes unless the fetch finds titles."""
+        """Guess the epguides URL from the folder path and fetch it. Nothing
+        changes (apart from a status message) unless the fetch finds titles."""
         self._auto_after = None
         slug = series_slug(folder)
-        season = self._get_season(quiet=True)
-        if not slug or season is None:
+        if not slug:
+            self.status_var.set("Couldn't work out a series name from the folder path.")
             return
+        season = self._get_season(quiet=True)
+        if season is None:
+            self.status_var.set("Please enter a season number (1 or higher).")
+            return
+        self.status_var.set(f"Looking up {slug} on epguides.com…")
         self._start_fetch(f"{EPGUIDES_BASE}{slug}/", season, auto_folder=folder)
 
     def _selected_titles(self):
@@ -485,23 +507,24 @@ class App(ttk.Frame):
         """Ticking or unticking titles refreshes the preview if one is showing."""
         had_preview = self.plan is not None
         self._invalidate_preview()
-        self._update_titles_status()
+        summary = (
+            f"{len(self._selected_titles())} of {len(self.titles)} titles selected "
+            f"for season {self.fetched_season}."
+        )
         if had_preview:
-            self._build_preview(quiet=True)
+            self._build_preview(quiet=True, prefix=summary)
+        else:
+            self.status_var.set(summary)
 
     def _on_pad_change(self, *_):
         """Changing the leading-zero option refreshes the preview if one is showing."""
         had_preview = self.plan is not None
         self._invalidate_preview()
+        message = "Leading zero in season number: " + ("on." if self.pad_var.get() else "off.")
         if had_preview:
-            self._build_preview(quiet=True)
-
-    def _update_titles_status(self):
-        if self.titles:
-            self.status_var.set(
-                f"{len(self._selected_titles())} of {len(self.titles)} titles selected "
-                f"for season {self.fetched_season}."
-            )
+            self._build_preview(quiet=True, prefix=message)
+        else:
+            self.status_var.set(message)
 
     def _on_titles_click(self, event):
         tree = self.titles_tree
@@ -544,6 +567,7 @@ class App(ttk.Frame):
     def on_fetch(self):
         url = self.url_var.get().strip()
         if not url or url.rstrip("/") in ("https://epguides.com", "http://epguides.com"):
+            self.status_var.set("Enter the show's epguides.com URL first.")
             messagebox.showerror(
                 "Missing URL", "Please enter the epguides.com page for the show\n"
                 "(e.g. https://epguides.com/TedLasso/)."
@@ -561,7 +585,12 @@ class App(ttk.Frame):
         """Fetch in a background thread; the result is handled by _poll_fetch.
         `auto_folder` is set for automatic fetches (triggered by a folder)."""
         self._fetch_token += 1
-        meta = {"url": url, "token": self._fetch_token, "auto_folder": auto_folder}
+        meta = {
+            "url": url,
+            "season": season,
+            "token": self._fetch_token,
+            "auto_folder": auto_folder,
+        }
         threading.Thread(
             target=self._fetch_worker, args=(url, season, meta), daemon=True
         ).start()
@@ -599,14 +628,20 @@ class App(ttk.Frame):
         kind, meta = msg[0], msg[1]
 
         if meta["auto_folder"] is not None:
-            # Automatic fetch: do nothing unless it found titles, and the
-            # folder hasn't changed (and no newer fetch started) meanwhile.
+            # Automatic fetch: ignore the result if the folder changed (or a
+            # newer fetch started) meanwhile; only use it if it found titles.
             if (
-                kind != "ok"
-                or not msg[3]
-                or meta["token"] != self._fetch_token
+                meta["token"] != self._fetch_token
                 or self.folder_var.get().strip() != meta["auto_folder"]
             ):
+                return
+            if kind == "err":
+                self.status_var.set(f"Couldn't fetch {meta['url']} – {msg[2]}")
+                return
+            if not msg[3]:
+                self.status_var.set(
+                    f"No season {meta['season']} titles found at {meta['url']}."
+                )
                 return
             self.url_var.set(meta["url"])
             self._apply_titles(msg[2], msg[3])
@@ -614,14 +649,14 @@ class App(ttk.Frame):
 
         self.fetch_btn.config(state="normal")
         if kind == "err":
-            self.status_var.set("Fetch failed.")
+            self.status_var.set(f"Fetch failed: {msg[2]}")
             messagebox.showerror("Fetch failed", msg[2])
             return
 
         season, titles = msg[2], msg[3]
         self._apply_titles(season, titles)
         if not titles:
-            self.status_var.set("No episodes found.")
+            self.status_var.set(f"No episodes found for season {season}.")
             messagebox.showwarning(
                 "No episodes found",
                 f"Couldn't find any episodes for season {season} at that URL.",
@@ -639,25 +674,31 @@ class App(ttk.Frame):
             self.titles_tree.insert("", "end", iid=str(ep), values=(CHECKED, ep, title))
         self._invalidate_preview()
         if titles:
-            self.status_var.set(f"Loaded {len(titles)} titles for season {season}.")
-            self._build_preview(quiet=True)
+            self._build_preview(
+                quiet=True, prefix=f"Loaded {len(titles)} titles for season {season}."
+            )
 
     def on_preview(self):
         self._build_preview()
 
-    def _build_preview(self, quiet=False):
-        """Fill the preview table.
+    def _build_preview(self, quiet=False, prefix=""):
+        """Fill the preview table and report the outcome in the status bar.
 
-        With quiet=True (automatic refresh after a fetch or a checkbox change)
-        a problem clears the preview and is explained in the status line
-        instead of in a dialog.
+        `prefix` is text about whatever triggered the refresh (for example
+        "Loaded 12 titles for season 3."); it comes first in the status message.
+        With quiet=True (automatic refresh) a problem clears the preview and is
+        explained in the status bar only, instead of also in a dialog.
         """
+
+        def say(message=""):
+            text = f"{prefix} {message}".strip()
+            if text:
+                self.status_var.set(text)
 
         def problem(kind, title, message):
             self._invalidate_preview()
-            if quiet:
-                self.status_var.set(message)
-            else:
+            say(message)
+            if not quiet:
                 getattr(messagebox, kind)(title, message)
 
         if not self.titles:
@@ -666,8 +707,7 @@ class App(ttk.Frame):
         season = self._get_season(quiet=quiet)
         if season is None:
             self._invalidate_preview()
-            if quiet:
-                self.status_var.set("Please enter a season number (1 or higher).")
+            say("Please enter a season number (1 or higher).")
             return
         if season != self.fetched_season:
             problem(
@@ -681,6 +721,7 @@ class App(ttk.Frame):
         folder = self.folder_var.get().strip()
         if quiet and not folder:  # no folder chosen yet: nothing to preview
             self._invalidate_preview()
+            say()
             return
         if not folder or not os.path.isdir(folder):
             problem("showerror", "Invalid folder", "Please choose a valid folder.")
@@ -722,8 +763,8 @@ class App(ttk.Frame):
             )
         elif len(titles) > len(files):
             notes.append(f"{len(titles) - len(files)} title(s) have no file")
-        self.status_var.set(
-            f"{len(files)} file(s), {len(changes)} to rename."
+        say(
+            f"Preview: {len(files)} file(s), {len(changes)} to rename."
             + (" " + "; ".join(notes) + "." if notes else "")
         )
         self.rename_btn.config(state="normal" if changes else "disabled")
@@ -743,7 +784,7 @@ class App(ttk.Frame):
 
         error = apply_renames(folder, changes)
         if error:
-            self.status_var.set("Rename failed.")
+            self.status_var.set(f"Rename failed: {error.splitlines()[0]}")
             messagebox.showerror("Rename failed", error)
             return
 
