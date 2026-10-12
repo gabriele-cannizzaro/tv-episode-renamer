@@ -24,7 +24,7 @@ Sample.Show.S03E02.mkv   →   3x02 - Second Thoughts.mkv
 
 **Choosing what gets renamed**
 - Every fetched title has a checkbox. An unticked title is left out, and the remaining files are matched to the remaining titles in order. The box in the column header ticks or unticks all.
-- Every file in the preview has its own checkbox too. An unticked file is skipped and doesn't use up a title.
+- Every file in the preview has its own checkbox too. An unticked file is skipped and doesn't use up a title. The box in that column's header ticks or unticks all files.
 - Files that share a name apart from the extension (for example `.mkv` and `.srt`) get the same new name.
 - Rows that don't need renaming are greyed out.
 
