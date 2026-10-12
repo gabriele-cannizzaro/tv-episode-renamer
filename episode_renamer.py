@@ -229,7 +229,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.3"
+VERSION = "1.4"
 
 CHECKED = "☑"
 UNCHECKED = "☐"
@@ -310,7 +310,7 @@ class App(ttk.Frame):
         self.titles_tree.bind("<Button-1>", self._on_titles_click)
         self.titles_tree.bind("<space>", self._on_titles_space)
         bar = ttk.Frame(titles_box)
-        bar.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        bar.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Button(bar, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
         ttk.Button(bar, text="Select none", command=lambda: self._set_all(False)).pack(
             side="left", padx=6
@@ -345,18 +345,40 @@ class App(ttk.Frame):
 
     @staticmethod
     def _make_tree(parent, columns):
+        """A table with left-aligned headers.
+
+        macOS ignores left-alignment on the native Treeview headings, so the
+        table is drawn without them and a row of labels, kept in step with the
+        column widths, is shown above it instead.
+        """
+        header_h = 24
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        header = ttk.Frame(parent, height=header_h)
+        header.grid(row=0, column=0, sticky="ew")
         tree = ttk.Treeview(
-            parent, columns=[c[0] for c in columns], show="headings", height=6
+            parent, columns=[c[0] for c in columns], show="", height=6
         )
+        labels = {}
         for cid, heading, width, anchor in columns:
-            tree.heading(cid, text=heading, anchor="w")
             tree.column(cid, width=width, anchor=anchor, stretch=(cid not in ("ep", "chk")))
+            labels[cid] = ttk.Label(
+                header, text=heading, anchor="w", padding=(6, 3), font="TkHeadingFont"
+            )
         sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
-        tree.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
+        tree.grid(row=1, column=0, sticky="nsew")
+        sb.grid(row=1, column=1, sticky="ns")
+
+        def sync_headers():
+            x = 0
+            for cid, _heading, _width, _anchor in columns:
+                w = int(tree.column(cid, option="width"))
+                labels[cid].place(x=x, y=0, width=w, height=header_h)
+                x += w
+
+        tree.bind("<Configure>", lambda _e: tree.after_idle(sync_headers), add="+")
+        tree.after(100, sync_headers)
         return tree
 
     # ---- helpers ---------------------------------------------------------
