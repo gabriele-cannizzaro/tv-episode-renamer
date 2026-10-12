@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.14"
+VERSION = "1.15"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -355,9 +355,10 @@ class App(ttk.Frame):
             row=0, column=2
         )
 
-        # Fetch button: right of the season input, in the same column as Next.
+        # Fetch button: right of the season input, as wide as Next and Browse
+        # together (it spans the two columns they sit in).
         self.fetch_btn = ttk.Button(self, text="Fetch titles", command=self.on_fetch)
-        self.fetch_btn.grid(row=1, column=2, sticky="ew", padx=(0, 4), pady=3)
+        self.fetch_btn.grid(row=1, column=2, columnspan=2, sticky="ew", pady=3)
         # "Attempting to fetch titles" text, just under the button. width=1 means it
         # never changes the column widths (it would be clipped if too long).
         ttk.Label(
@@ -394,7 +395,7 @@ class App(ttk.Frame):
             self,
             text="Leading zero in season number (03x01 instead of 3x01)",
             variable=self.pad_var,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", pady=2)
+        ).grid(row=4, column=0, columnspan=4, sticky="w", pady=8)
 
         # Preview table
         preview_box = ttk.LabelFrame(self, text="Preview", padding=6)
