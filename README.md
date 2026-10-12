@@ -49,7 +49,15 @@ No other packages are needed.
 python3 episode_renamer.py
 ```
 
-`build_app.sh` is an optional script that builds a standalone `.app` with PyInstaller.
+`build_app.command` is an optional script that builds a standalone `.app` with PyInstaller.
+
+Before the first run, make it executable. In Terminal, from the repository folder:
+
+```
+chmod +x build_app.command
+```
+
+After that you can double-click it in Finder (it opens in Terminal) or run `./build_app.command`.
 
 Windows is not supported yet: the folder-path handling assumes `/` separators and the file-name cleaning only covers macOS rules.
 

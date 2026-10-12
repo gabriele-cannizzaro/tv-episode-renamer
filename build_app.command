@@ -1,6 +1,7 @@
 #!/bin/bash
 # Optional: builds a fully standalone "TV Episode Renamer.app" (bundles Python + Tk),
-# so it runs on Macs without Python installed. Run with:  bash build_app.sh
+# so it runs on Macs without Python installed. Double-click it in Finder, or run:
+#   ./build_app.command
 # Requires Python 3 from python.org (it includes Tk).
 set -e
 cd "$(dirname "$0")"
