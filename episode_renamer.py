@@ -224,18 +224,28 @@ def list_files(folder):
     return sorted(names, key=natural_key)
 
 
+def group_files(files):
+    """Group files that share a name apart from the extension (episode.mkv and
+    episode.srt) so they count as one episode. Order follows the sorted list."""
+    groups = {}
+    for f in files:
+        groups.setdefault(os.path.splitext(f)[0].lower(), []).append(f)
+    return list(groups.values())
+
+
 def build_plan(files, titles, season, pad_season):
-    """Return a list of (old_name, new_name_or_None), one per file."""
+    """Return a list of (old_name, new_name_or_None), one per file. Files with
+    the same name but different extensions get the same new name."""
     season_str = f"{season:02d}" if pad_season else str(season)
     plan = []
-    for i, old in enumerate(files):
-        if i < len(titles):
-            ep, title = titles[i]
-            ext = os.path.splitext(old)[1]
-            new = f"{season_str}x{ep:02d} - {sanitize_title(title)}{ext}"
-            plan.append((old, new))
-        else:
-            plan.append((old, None))
+    for i, group in enumerate(group_files(files)):
+        for old in group:
+            if i < len(titles):
+                ep, title = titles[i]
+                ext = os.path.splitext(old)[1]
+                plan.append((old, f"{season_str}x{ep:02d} - {sanitize_title(title)}{ext}"))
+            else:
+                plan.append((old, None))
     return plan
 
 
@@ -283,7 +293,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.23"
+VERSION = "1.24"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -763,14 +773,16 @@ class App(ttk.Frame):
         notes = []
         if unchanged:
             notes.append(f"{unchanged} already correctly named")
-        if len(files) > len(titles):
+        n_eps = len(group_files(files))
+        if n_eps > len(titles):
             notes.append(
-                f"{len(files) - len(titles)} file(s) have no matching title and will be skipped"
+                f"{n_eps - len(titles)} episode(s) have no matching title and will be skipped"
             )
-        elif len(titles) > len(files):
-            notes.append(f"{len(titles) - len(files)} title(s) have no file")
+        elif len(titles) > n_eps:
+            notes.append(f"{len(titles) - n_eps} title(s) have no file")
+        extra = f" in {n_eps} episode(s)" if n_eps != len(files) else ""
         self.status_var.set(
-            f"{len(files)} file(s), {len(changes)} to rename."
+            f"{len(files)} file(s){extra}, {len(changes)} to rename."
             + (" " + "; ".join(notes) + "." if notes else "")
         )
         self.rename_btn.config(state="normal" if changes else "disabled")
