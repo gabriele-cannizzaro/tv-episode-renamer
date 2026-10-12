@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.12"
+VERSION = "1.13"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -343,20 +343,21 @@ class App(ttk.Frame):
 
         ttk.Label(self, text="Episodes URL:").grid(row=1, column=0, sticky="w", pady=3)
         url_entry = ttk.Entry(self, textvariable=self.url_var)
-        url_entry.grid(row=1, column=1, columnspan=3, sticky="ew", padx=6, pady=3)
+        url_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=3)
         url_entry.insert(0, "https://epguides.com/")
-
-        ttk.Label(self, text="Season number:").grid(row=2, column=0, sticky="w", pady=3)
-        opts = ttk.Frame(self)
-        opts.grid(row=2, column=1, columnspan=3, sticky="ew", padx=6, pady=3)
-        ttk.Spinbox(opts, from_=1, to=99, width=5, textvariable=self.season_var).pack(
-            side="left"
+        # season number: to the right of the URL, on the same row
+        season_box = ttk.Frame(self)
+        season_box.grid(row=1, column=2, columnspan=2, sticky="e", pady=3)
+        ttk.Label(season_box, text="Season:").pack(side="left")
+        ttk.Spinbox(season_box, from_=1, to=99, width=4, textvariable=self.season_var).pack(
+            side="left", padx=(6, 0)
         )
+
         ttk.Checkbutton(
-            opts,
+            self,
             text="Leading zero in season number (03x01 instead of 3x01)",
             variable=self.pad_var,
-        ).pack(side="left", padx=14)
+        ).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=3)
 
         self.fetch_btn = ttk.Button(self, text="Fetch titles", command=self.on_fetch)
         self.fetch_btn.grid(row=3, column=0, sticky="w", pady=(8, 4))
@@ -400,16 +401,15 @@ class App(ttk.Frame):
 
         btns = ttk.Frame(self)
         btns.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(6, 2))
-        self.preview_btn = ttk.Button(btns, text="Preview", command=self.on_preview)
-        self.preview_btn.pack(side="left")
         self.rename_btn = ttk.Button(
             btns, text="Rename files", command=self.on_rename, state="disabled"
         )
         self.rename_btn.pack(side="right")
-
-        ttk.Label(self, textvariable=self.status_var, foreground="gray40").grid(
-            row=7, column=0, columnspan=4, sticky="w", pady=(4, 0)
-        )
+        # Status text, where the Preview button used to be. width=1 + expand lets
+        # it fill the free space and be clipped (rather than push the window) if long.
+        ttk.Label(
+            btns, textvariable=self.status_var, foreground="gray40", anchor="w", width=1
+        ).pack(side="left", fill="x", expand=True)
 
     @staticmethod
     def _make_tree(parent, columns):
@@ -456,6 +456,8 @@ class App(ttk.Frame):
         folder = self.folder_var.get().strip()
         if folder and os.path.isdir(folder):
             self.season_var.set(str(guess_season(folder)))
+            if self.titles:  # titles already loaded: preview them for this folder
+                self._build_preview(quiet=True)
             self._auto_after = self.after(
                 AUTO_FETCH_DELAY_MS, lambda: self._auto_fetch(folder)
             )
