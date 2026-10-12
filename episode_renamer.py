@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.18"
+VERSION = "1.19"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -522,7 +522,7 @@ class App(ttk.Frame):
         self._update_master_checkbox()
         self._invalidate_preview()
         self._update_titles_status()
-        if had_preview:
+        if had_preview or (self.titles and os.path.isdir(self.folder_var.get().strip())):
             self._build_preview(quiet=True)
 
     def _on_pad_change(self, *_):
