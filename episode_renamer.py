@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.16"
+VERSION = "1.17"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -337,7 +337,7 @@ class App(ttk.Frame):
             row=0, column=2, sticky="ew", padx=(0, 4), pady=3
         )
         ttk.Button(self, text="Browse…", command=self.on_browse).grid(
-            row=0, column=3, pady=3
+            row=0, column=3, sticky="ew", pady=3
         )
 
         ttk.Label(self, text="Episodes URL:").grid(row=1, column=0, sticky="w", pady=3)
@@ -355,16 +355,16 @@ class App(ttk.Frame):
         )
 
         # Fetch button: right of the season input, as wide as Next and Browse
-        # together (it spans the two columns they sit in).
+        # together (it spans the two columns they sit in). While titles are being
+        # fetched, a text takes its place. Both widgets always occupy this same
+        # cell and only their stacking order changes, so nothing ever moves.
+        self.fetching_label = ttk.Label(
+            self, text="Attempting to fetch titles", foreground="gray40", anchor="center"
+        )
+        self.fetching_label.grid(row=1, column=2, columnspan=2, sticky="nsew", pady=3)
         self.fetch_btn = ttk.Button(self, text="Fetch titles", command=self.on_fetch)
         self.fetch_btn.grid(row=1, column=2, columnspan=2, sticky="ew", pady=3)
-        # While titles are being fetched, this text takes the button's place.
-        self.fetching_label = ttk.Label(
-            self, text="Fetching titles...", foreground="gray40", anchor="center",
-            padding=(0, 5),
-        )
-        self.fetching_label.grid(row=1, column=2, columnspan=2, sticky="ew", pady=3)
-        self.fetching_label.grid_remove()  # hidden until a fetch starts
+        # (the button is created last, so it starts on top of the text)
 
         # Titles list
         titles_box = ttk.LabelFrame(self, text="Episode titles", padding=6)
@@ -451,13 +451,9 @@ class App(ttk.Frame):
             return None
 
     def _show_fetching(self, fetching):
-        """Swap the Fetch titles button for a "Fetching titles..." text, and back."""
-        if fetching:
-            self.fetch_btn.grid_remove()
-            self.fetching_label.grid()
-        else:
-            self.fetching_label.grid_remove()
-            self.fetch_btn.grid()
+        """Show the "Attempting to fetch titles" text in place of the Fetch titles
+        button, and back. Both sit in the same cell; only the stacking changes."""
+        (self.fetching_label if fetching else self.fetch_btn).tkraise()
 
     def _invalidate_preview(self):
         self.plan = None
