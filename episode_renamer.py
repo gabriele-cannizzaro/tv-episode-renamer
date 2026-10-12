@@ -319,7 +319,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.37"
+VERSION = "1.38"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -433,7 +433,7 @@ class App(ttk.Frame):
         # Leading-zero option: above the titles list
         ttk.Checkbutton(
             self,
-            text="Leading zero in season number (03x01 instead of 3x01)",
+            text="Leading zero in season number (01x01 instead of 1x01)",
             variable=self.pad_var,
         ).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=(3, 6))
 
