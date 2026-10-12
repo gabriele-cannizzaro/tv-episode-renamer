@@ -245,20 +245,21 @@ def group_files(files):
     return list(groups.values())
 
 
-def build_plan(files, titles, season, pad_season):
+def build_plan(files, titles, season, pad_season, skip=()):
     """Return a list of (old_name, new_name_or_None), one per file. Files with
-    the same name but different extensions get the same new name."""
+    the same name but different extensions get the same new name. Files in
+    `skip` (unticked by the user) get no title and don't use one up."""
     season_str = f"{season:02d}" if pad_season else str(season)
-    plan = []
-    for i, group in enumerate(group_files(files)):
+    new_names = {}
+    used = [f for f in files if f not in skip]
+    for i, group in enumerate(group_files(used)):
+        if i >= len(titles):
+            break
+        ep, title = titles[i]
         for old in group:
-            if i < len(titles):
-                ep, title = titles[i]
-                ext = os.path.splitext(old)[1]
-                plan.append((old, f"{season_str}x{ep:02d} - {sanitize_title(title)}{ext}"))
-            else:
-                plan.append((old, None))
-    return plan
+            ext = os.path.splitext(old)[1]
+            new_names[old] = f"{season_str}x{ep:02d} - {sanitize_title(title)}{ext}"
+    return [(old, new_names.get(old)) for old in files]
 
 
 def apply_renames(folder, renames):
@@ -305,7 +306,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.31"
+VERSION = "1.32"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -332,6 +333,7 @@ class App(ttk.Frame):
         self._auto_after = None  # pending automatic fetch (after-callback id)
         self._pending_fetches = 0  # fetches started but not yet finished
 
+        self.file_checked = {}  # file name -> ticked? (missing = ticked)
         self.folder_var = tk.StringVar()
         self.url_var = tk.StringVar()
         self.season_var = tk.StringVar(value="1")
@@ -417,9 +419,15 @@ class App(ttk.Frame):
         preview_box.grid(row=5, column=0, columnspan=4, sticky="nsew", pady=4)
         self.preview_tree = self._make_tree(
             preview_box,
-            [("old", "Current name", 330, "w"), ("new", "New name", 330, "w")],
+            [
+                ("chk", "Use", 50, "center"),
+                ("old", "Current name", 300, "w"),
+                ("new", "New name", 300, "w"),
+            ],
         )
         self.preview_tree.tag_configure("skip", foreground="gray50")
+        self.preview_tree.bind("<Button-1>", self._on_preview_click)
+        self.preview_tree.bind("<space>", self._on_preview_space)
 
         btns = ttk.Frame(self)
         btns.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(6, 2))
@@ -481,6 +489,7 @@ class App(ttk.Frame):
             self.after_cancel(self._auto_after)
             self._auto_after = None
         folder = self.folder_var.get().strip()
+        self.file_checked = {}  # a different folder: tick every file again
         self._update_next_state()
         if folder and os.path.isdir(folder):
             self.season_var.set(str(guess_season(folder)))
@@ -567,6 +576,31 @@ class App(ttk.Frame):
             self._toggle_row(iid)
             return "break"
         return None
+
+    def _toggle_file(self, iid):
+        if not self.plan:
+            return
+        name = self.plan[int(iid)][0]
+        self.file_checked[name] = not self.file_checked.get(name, True)
+        self._build_preview(quiet=True)
+
+    def _on_preview_click(self, event):
+        tree = self.preview_tree
+        if tree.identify_region(event.x, event.y) != "cell":
+            return None
+        if tree.identify_column(event.x) != "#1":
+            return None
+        iid = tree.identify_row(event.y)
+        if iid:
+            self._toggle_file(iid)
+            return "break"
+        return None
+
+    def _on_preview_space(self, _event):
+        sel = list(self.preview_tree.selection())
+        if sel:
+            self._toggle_file(sel[0])  # (one at a time: a refresh rebuilds the rows)
+        return "break"
 
     def _on_titles_space(self, _event):
         for iid in self.titles_tree.selection():
@@ -768,33 +802,48 @@ class App(ttk.Frame):
             problem("showinfo", "No titles selected", "Tick at least one episode title.")
             return
 
-        self.plan = build_plan(files, titles, season, self.pad_var.get())
+        skip = {f for f in files if not self.file_checked.get(f, True)}
+        self.plan = build_plan(files, titles, season, self.pad_var.get(), skip)
+        yview = self.preview_tree.yview()[0]
         self.preview_tree.delete(*self.preview_tree.get_children())
-        for old, new in self.plan:
-            if new is None:
+        for i, (old, new) in enumerate(self.plan):
+            iid = str(i)
+            if old in skip:
                 self.preview_tree.insert(
-                    "", "end", values=(old, "(no matching title – skipped)"), tags=("skip",)
+                    "", "end", iid=iid,
+                    values=(UNCHECKED, old, "(unticked – skipped)"), tags=("skip",),
+                )
+            elif new is None:
+                self.preview_tree.insert(
+                    "", "end", iid=iid,
+                    values=(CHECKED, old, "(no matching title – skipped)"), tags=("skip",),
                 )
             elif new == old:  # already correctly named: nothing to do, grey it out
-                self.preview_tree.insert("", "end", values=(old, new), tags=("skip",))
+                self.preview_tree.insert(
+                    "", "end", iid=iid, values=(CHECKED, old, new), tags=("skip",)
+                )
             else:
-                self.preview_tree.insert("", "end", values=(old, new))
+                self.preview_tree.insert("", "end", iid=iid, values=(CHECKED, old, new))
+        self.preview_tree.yview_moveto(yview)
 
         changes = [(o, n) for o, n in self.plan if n and n != o]
         unchanged = sum(1 for o, n in self.plan if n == o)
+        used = [f for f in files if f not in skip]
         notes = []
+        if skip:
+            notes.append(f"{len(skip)} unticked")
         if unchanged:
             notes.append(f"{unchanged} already correctly named")
-        n_eps = len(group_files(files))
+        n_eps = len(group_files(used))
         if n_eps > len(titles):
             notes.append(
                 f"{n_eps - len(titles)} episode(s) have no matching title and will be skipped"
             )
         elif len(titles) > n_eps:
             notes.append(f"{len(titles) - n_eps} title(s) have no file")
-        extra = f" in {n_eps} episode(s)" if n_eps != len(files) else ""
+        extra = f" in {n_eps} episode(s)" if n_eps != len(used) else ""
         self.status_var.set(
-            f"{len(files)} file(s){extra}, {len(changes)} to rename."
+            f"{len(used)} file(s){extra}, {len(changes)} to rename."
             + (" " + "; ".join(notes) + "." if notes else "")
         )
         self.rename_btn.config(state="normal" if changes else "disabled")
