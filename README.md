@@ -17,8 +17,8 @@ Sample.Show.S03E02.mkv    →   3x02 - Second Thoughts.mkv
 ## Features
 
 **Fetching titles**
-- Paste or browse to a season folder and the app guesses the show from the folder path (the folder above the season folder, in Pascal case, without a leading "The") and builds the epguides URL, for example `.../Ted Lasso/04 - Ted Lasso` becomes `https://epguides.com/TedLasso/`. If that doesn't work, nothing happens and you can enter the URL yourself.
-- The season number is pre-filled from the folder name ("Season 3", "S03", "04 - Ted Lasso", and so on), or 1 if none is found.
+- Paste or browse to a season folder and the app guesses the show from the folder path (the folder above the season folder, in Pascal case, without a leading "The") and builds the epguides URL, for example `.../Sample Show/03 - Sample Show` becomes `https://epguides.com/SampleShow/`. If that doesn't work, nothing happens and you can enter the URL yourself.
+- The season number is pre-filled from the folder name ("Season 3", "S03", "03 - Sample Show", and so on), or 1 if none is found.
 - Running times such as ` (90 mins)` are stripped from the titles.
 - A **Next** button jumps to the next season's folder (it is greyed out when that folder doesn't exist).
 
@@ -34,9 +34,6 @@ Sample.Show.S03E02.mkv    →   3x02 - Second Thoughts.mkv
 - The preview refreshes by itself whenever the folder, the titles, the checkboxes or the leading-zero option change.
 - The rename asks for confirmation, then runs in the background and updates each row as its file is renamed. If anything fails, every change is rolled back.
 - Characters that can't go in a Mac file name are cleaned up (`:` becomes ` - `, `/` becomes `-`).
-
-**Status line**
-- The line at the bottom left shows what the app is doing: yellow while working, green for success, red for failures, grey for general information.
 
 ## Requirements
 
@@ -55,16 +52,6 @@ python3 episode_renamer.py
 `build_app.sh` is an optional script that builds a standalone `.app` with PyInstaller.
 
 Windows is not supported yet: the folder-path handling assumes `/` separators and the file-name cleaning only covers macOS rules.
-
-## Version history
-
-Every version of the script is a commit and a tag in this repository (`v1.0` to `v1.37`). To see or run an older one:
-
-```
-git checkout v1.19
-```
-
-`v1.19`, `v1.34` and `v1.37` were each marked as the "main" version in turn.
 
 ## Notes
 
