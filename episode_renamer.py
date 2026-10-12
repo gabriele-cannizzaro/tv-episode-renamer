@@ -293,7 +293,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.26"
+VERSION = "1.27"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -379,7 +379,7 @@ class App(ttk.Frame):
 
         # Titles list
         titles_box = ttk.LabelFrame(self, text="Episode titles", padding=6)
-        titles_box.grid(row=3, column=0, columnspan=4, sticky="nsew", pady=(0, 8))
+        titles_box.grid(row=3, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
         self.titles_tree = self._make_tree(
             titles_box,
             [
