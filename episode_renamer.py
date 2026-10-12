@@ -181,14 +181,17 @@ def pascal_case(text):
 
 def series_slug(folder):
     """Series name for the epguides URL: the text between the last and the
-    last-but-one "/" of the folder path, in Pascal case. None if there is none.
+    last-but-one "/" of the folder path, in Pascal case, without a leading
+    "The". None if there is none.
 
         /Volumes/Hermes/TV Series/Ted Lasso/04 - Ted Lasso  ->  TedLasso
+        /Volumes/Hermes/TV Series/The Office/Season 2        ->  Office
     """
     parts = folder.strip().rstrip("/").split("/")
     if len(parts) < 2:
         return None
-    return pascal_case(parts[-2]) or None
+    name = re.sub(r"(?i)^\s*the[\s._-]+(?=[A-Za-z0-9])", "", parts[-2])  # "The Office" -> "Office"
+    return pascal_case(name) or None
 
 
 def list_files(folder):
@@ -259,7 +262,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.7"
+VERSION = "1.8"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
