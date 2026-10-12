@@ -262,7 +262,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.8"
+VERSION = "1.9"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -295,9 +295,10 @@ class App(ttk.Frame):
 
         self._build()
 
-        for var in (self.folder_var, self.season_var, self.pad_var):
+        for var in (self.folder_var, self.season_var):
             var.trace_add("write", lambda *_: self._invalidate_preview())
         self.folder_var.trace_add("write", self._on_folder_change)
+        self.pad_var.trace_add("write", self._on_pad_change)
 
     # ---- layout ----------------------------------------------------------
 
@@ -461,6 +462,13 @@ class App(ttk.Frame):
         had_preview = self.plan is not None
         self._invalidate_preview()
         self._update_titles_status()
+        if had_preview:
+            self._build_preview(quiet=True)
+
+    def _on_pad_change(self, *_):
+        """Changing the leading-zero option refreshes the preview if one is showing."""
+        had_preview = self.plan is not None
+        self._invalidate_preview()
         if had_preview:
             self._build_preview(quiet=True)
 
