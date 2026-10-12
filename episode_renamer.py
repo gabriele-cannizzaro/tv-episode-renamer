@@ -229,6 +229,8 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
+VERSION = "1.2"
+
 CHECKED = "☑"
 UNCHECKED = "☐"
 
@@ -586,7 +588,7 @@ class App(ttk.Frame):
 
 def main():
     root = tk.Tk()
-    root.title("TV Episode Renamer")
+    root.title(f"TV Episode Renamer v{VERSION}")
     root.geometry("820x720")
     root.minsize(640, 560)
     App(root)
