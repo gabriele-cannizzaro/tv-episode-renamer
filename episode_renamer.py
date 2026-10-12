@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.13"
+VERSION = "1.14"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -327,7 +327,7 @@ class App(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(1, weight=1)
-        self.rowconfigure(4, weight=1)
+        self.rowconfigure(3, weight=1)
         self.rowconfigure(5, weight=2)
 
         ttk.Label(self, text="Folder:").grid(row=0, column=0, sticky="w", pady=3)
@@ -335,39 +335,38 @@ class App(ttk.Frame):
             row=0, column=1, sticky="ew", padx=6, pady=3
         )
         ttk.Button(self, text="Next", command=self.on_next).grid(
-            row=0, column=2, padx=(0, 4), pady=3
+            row=0, column=2, sticky="ew", padx=(0, 4), pady=3
         )
         ttk.Button(self, text="Browse…", command=self.on_browse).grid(
             row=0, column=3, pady=3
         )
 
         ttk.Label(self, text="Episodes URL:").grid(row=1, column=0, sticky="w", pady=3)
-        url_entry = ttk.Entry(self, textvariable=self.url_var)
-        url_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=3)
+        # The URL and the season input share one cell, so the season input's right
+        # edge lines up with the right edge of the folder input above.
+        url_row = ttk.Frame(self)
+        url_row.grid(row=1, column=1, sticky="ew", padx=6, pady=3)
+        url_row.columnconfigure(0, weight=1)
+        url_entry = ttk.Entry(url_row, textvariable=self.url_var)
+        url_entry.grid(row=0, column=0, sticky="ew")
         url_entry.insert(0, "https://epguides.com/")
-        # season number: to the right of the URL, on the same row
-        season_box = ttk.Frame(self)
-        season_box.grid(row=1, column=2, columnspan=2, sticky="e", pady=3)
-        ttk.Label(season_box, text="Season:").pack(side="left")
-        ttk.Spinbox(season_box, from_=1, to=99, width=4, textvariable=self.season_var).pack(
-            side="left", padx=(6, 0)
+        ttk.Label(url_row, text="Season:").grid(row=0, column=1, padx=(12, 6))
+        ttk.Spinbox(url_row, from_=1, to=99, width=4, textvariable=self.season_var).grid(
+            row=0, column=2
         )
 
-        ttk.Checkbutton(
-            self,
-            text="Leading zero in season number (03x01 instead of 3x01)",
-            variable=self.pad_var,
-        ).grid(row=2, column=1, columnspan=3, sticky="w", padx=6, pady=3)
-
+        # Fetch button: right of the season input, in the same column as Next.
         self.fetch_btn = ttk.Button(self, text="Fetch titles", command=self.on_fetch)
-        self.fetch_btn.grid(row=3, column=0, sticky="w", pady=(8, 4))
-        ttk.Label(self, textvariable=self.fetch_msg_var, foreground="gray40").grid(
-            row=3, column=1, columnspan=3, sticky="w", padx=6, pady=(8, 4)
-        )
+        self.fetch_btn.grid(row=1, column=2, sticky="ew", padx=(0, 4), pady=3)
+        # "Attempting to fetch titles" text, just under the button. width=1 means it
+        # never changes the column widths (it would be clipped if too long).
+        ttk.Label(
+            self, textvariable=self.fetch_msg_var, foreground="gray40", anchor="w", width=1
+        ).grid(row=2, column=2, columnspan=2, sticky="ew", pady=(0, 2))
 
         # Titles list
         titles_box = ttk.LabelFrame(self, text="Episode titles", padding=6)
-        titles_box.grid(row=4, column=0, columnspan=4, sticky="nsew", pady=4)
+        titles_box.grid(row=3, column=0, columnspan=4, sticky="nsew", pady=4)
         self.titles_tree = self._make_tree(
             titles_box,
             [
@@ -389,6 +388,13 @@ class App(ttk.Frame):
             text="Click a box (or press Space) to include or skip an episode.",
             foreground="gray40",
         ).pack(side="left", padx=8)
+
+        # Leading-zero option: between the titles list and the preview
+        ttk.Checkbutton(
+            self,
+            text="Leading zero in season number (03x01 instead of 3x01)",
+            variable=self.pad_var,
+        ).grid(row=4, column=0, columnspan=4, sticky="w", pady=2)
 
         # Preview table
         preview_box = ttk.LabelFrame(self, text="Preview", padding=6)
