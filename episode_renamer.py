@@ -306,7 +306,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.33"
+VERSION = "1.34"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -619,11 +619,12 @@ class App(ttk.Frame):
             self.folder_var.set(folder)
 
     def _update_next_state(self):
-        """The Next button is only usable when the folder input has a value."""
+        """The Next button is only usable when the next season's folder exists."""
         btn = getattr(self, "next_btn", None)
         if btn is not None:
-            has_folder = bool(self.folder_var.get().strip())
-            btn.state(["!disabled"] if has_folder else ["disabled"])
+            folder = self.folder_var.get().strip()
+            new = next_season_folder(folder) if folder else None
+            btn.state(["!disabled"] if new and os.path.isdir(new) else ["disabled"])
 
     def on_next(self):
         """Move to the next season's folder (season number in the path + 1)."""
