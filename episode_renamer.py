@@ -12,6 +12,10 @@ e.g.  3x01 - Smells Like Mean Spirit.mkv      (season padding off)
 
 The episode number is always two digits (01, 02, ... 12).
 
+The season number is pre-filled from the chosen folder's name (default 1),
+and each fetched title has a checkbox: unchecked titles are left out, so the
+files are matched to the remaining titles in order.
+
 Requires only the Python standard library (Tkinter ships with Python on macOS).
 """
 
@@ -145,6 +149,18 @@ def natural_key(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
 
+def guess_season(folder):
+    """Guess a season number from a folder's name; 1 if none is found."""
+    name = os.path.basename(os.path.normpath(folder))
+    # "Season 3", "Series 3", "S03" ...
+    m = re.search(r"(?i)(?:season|series|(?<![a-z])s)[\s._-]*(\d{1,2})(?![a-z\d])", name)
+    if not m:  # otherwise the first standalone 1-2 digit number, e.g. "04 - Ted Lasso"
+        m = re.search(r"(?<![A-Za-z\d])(\d{1,2})(?![A-Za-z\d])", name)
+    if m and int(m.group(1)) >= 1:
+        return int(m.group(1))
+    return 1
+
+
 def list_files(folder):
     names = [
         n
@@ -213,6 +229,10 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
+CHECKED = "☑"
+UNCHECKED = "☐"
+
+
 class App(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=12)
@@ -222,6 +242,7 @@ class App(ttk.Frame):
         master.rowconfigure(0, weight=1)
 
         self.titles = []  # [(ep, title)]
+        self.checked = {}  # episode number -> included?
         self.fetched_season = None
         self.plan = None
         self.queue = queue.Queue()
@@ -229,13 +250,14 @@ class App(ttk.Frame):
         self.folder_var = tk.StringVar()
         self.url_var = tk.StringVar()
         self.season_var = tk.StringVar(value="1")
-        self.pad_var = tk.BooleanVar(value=True)
+        self.pad_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Choose a folder and enter a URL to begin.")
 
         self._build()
 
         for var in (self.folder_var, self.season_var, self.pad_var):
             var.trace_add("write", lambda *_: self._invalidate_preview())
+        self.folder_var.trace_add("write", self._on_folder_change)
 
     # ---- layout ----------------------------------------------------------
 
@@ -276,8 +298,26 @@ class App(ttk.Frame):
         titles_box = ttk.LabelFrame(self, text="Episode titles", padding=6)
         titles_box.grid(row=4, column=0, columnspan=4, sticky="nsew", pady=4)
         self.titles_tree = self._make_tree(
-            titles_box, [("ep", "Episode", 80, "center"), ("title", "Title", 500, "w")]
+            titles_box,
+            [
+                ("chk", "Use", 50, "center"),
+                ("ep", "Episode", 80, "center"),
+                ("title", "Title", 460, "w"),
+            ],
         )
+        self.titles_tree.bind("<Button-1>", self._on_titles_click)
+        self.titles_tree.bind("<space>", self._on_titles_space)
+        bar = ttk.Frame(titles_box)
+        bar.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Button(bar, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
+        ttk.Button(bar, text="Select none", command=lambda: self._set_all(False)).pack(
+            side="left", padx=6
+        )
+        ttk.Label(
+            bar,
+            text="Click a box (or press Space) to include or skip an episode.",
+            foreground="gray40",
+        ).pack(side="left", padx=8)
 
         # Preview table
         preview_box = ttk.LabelFrame(self, text="Preview", padding=6)
@@ -310,7 +350,7 @@ class App(ttk.Frame):
         )
         for cid, heading, width, anchor in columns:
             tree.heading(cid, text=heading)
-            tree.column(cid, width=width, anchor=anchor, stretch=(cid != "ep"))
+            tree.column(cid, width=width, anchor=anchor, stretch=(cid not in ("ep", "chk")))
         sb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
         tree.grid(row=0, column=0, sticky="nsew")
@@ -333,6 +373,53 @@ class App(ttk.Frame):
         self.plan = None
         self.rename_btn.config(state="disabled")
         self.preview_tree.delete(*self.preview_tree.get_children())
+
+    def _on_folder_change(self, *_):
+        """Pre-set the season from the folder name once it is a real folder."""
+        folder = self.folder_var.get().strip()
+        if folder and os.path.isdir(folder):
+            self.season_var.set(str(guess_season(folder)))
+
+    def _selected_titles(self):
+        return [(ep, t) for ep, t in self.titles if self.checked.get(ep, True)]
+
+    def _toggle_row(self, iid):
+        ep = int(iid)
+        self.checked[ep] = not self.checked.get(ep, True)
+        self.titles_tree.set(iid, "chk", CHECKED if self.checked[ep] else UNCHECKED)
+        self._invalidate_preview()
+        self._update_titles_status()
+
+    def _set_all(self, value):
+        for ep, _ in self.titles:
+            self.checked[ep] = value
+            self.titles_tree.set(str(ep), "chk", CHECKED if value else UNCHECKED)
+        self._invalidate_preview()
+        self._update_titles_status()
+
+    def _update_titles_status(self):
+        if self.titles:
+            self.status_var.set(
+                f"{len(self._selected_titles())} of {len(self.titles)} titles selected "
+                f"for season {self.fetched_season}."
+            )
+
+    def _on_titles_click(self, event):
+        tree = self.titles_tree
+        if tree.identify_region(event.x, event.y) != "cell":
+            return None
+        if tree.identify_column(event.x) != "#1":
+            return None
+        iid = tree.identify_row(event.y)
+        if iid:
+            self._toggle_row(iid)
+            return "break"
+        return None
+
+    def _on_titles_space(self, _event):
+        for iid in self.titles_tree.selection():
+            self._toggle_row(iid)
+        return "break"
 
     # ---- actions ---------------------------------------------------------
 
@@ -395,10 +482,11 @@ class App(ttk.Frame):
 
         _, season, titles = msg
         self.titles = titles
+        self.checked = {ep: True for ep, _ in titles}
         self.fetched_season = season if titles else None
         self.titles_tree.delete(*self.titles_tree.get_children())
         for ep, title in titles:
-            self.titles_tree.insert("", "end", values=(ep, title))
+            self.titles_tree.insert("", "end", iid=str(ep), values=(CHECKED, ep, title))
         self._invalidate_preview()
 
         if titles:
@@ -438,24 +526,34 @@ class App(ttk.Frame):
             messagebox.showinfo("Empty folder", "No files were found in that folder.")
             return
 
-        self.plan = build_plan(files, self.titles, season, self.pad_var.get())
+        titles = self._selected_titles()
+        if not titles:
+            messagebox.showinfo("No titles selected", "Tick at least one episode title.")
+            return
+
+        self.plan = build_plan(files, titles, season, self.pad_var.get())
         self.preview_tree.delete(*self.preview_tree.get_children())
         for old, new in self.plan:
             if new is None:
                 self.preview_tree.insert(
                     "", "end", values=(old, "(no matching title – skipped)"), tags=("skip",)
                 )
+            elif new == old:  # already correctly named: nothing to do, grey it out
+                self.preview_tree.insert("", "end", values=(old, new), tags=("skip",))
             else:
                 self.preview_tree.insert("", "end", values=(old, new))
 
         changes = [(o, n) for o, n in self.plan if n and n != o]
+        unchanged = sum(1 for o, n in self.plan if n == o)
         notes = []
-        if len(files) > len(self.titles):
+        if unchanged:
+            notes.append(f"{unchanged} already correctly named")
+        if len(files) > len(titles):
             notes.append(
-                f"{len(files) - len(self.titles)} file(s) have no matching title and will be skipped"
+                f"{len(files) - len(titles)} file(s) have no matching title and will be skipped"
             )
-        elif len(self.titles) > len(files):
-            notes.append(f"{len(self.titles) - len(files)} title(s) have no file")
+        elif len(titles) > len(files):
+            notes.append(f"{len(titles) - len(files)} title(s) have no file")
         self.status_var.set(
             f"{len(files)} file(s), {len(changes)} to rename."
             + (" " + "; ".join(notes) + "." if notes else "")
