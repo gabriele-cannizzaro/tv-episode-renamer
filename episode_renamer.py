@@ -319,7 +319,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.38"
+VERSION = "1.39"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -443,7 +443,7 @@ class App(ttk.Frame):
         self.preview_tree = self._make_tree(
             preview_box,
             [
-                ("chk", "Use", 50, "center"),
+                ("chk", UNCHECKED, 50, "center"),  # header is a master checkbox
                 ("old", "Current name", 300, "w"),
                 ("new", "New name", 300, "w"),
             ],
@@ -451,6 +451,8 @@ class App(ttk.Frame):
         self.preview_tree.tag_configure("skip", foreground="gray50")
         self.preview_tree.bind("<Button-1>", self._on_preview_click)
         self.preview_tree.bind("<space>", self._on_preview_space)
+        # The header box of the first column ticks or unticks every file.
+        self.preview_tree.heading("chk", anchor="center", command=self._toggle_all_files)
 
         btns = ttk.Frame(self)
         btns.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(6, 2))
@@ -521,6 +523,7 @@ class App(ttk.Frame):
         self.plan = None
         self.rename_btn.config(state="disabled")
         self.preview_tree.delete(*self.preview_tree.get_children())
+        self._update_files_master()
 
     def _on_folder_change(self, *_):
         """Once the folder is a real one: pre-set the season from its name, then
@@ -623,6 +626,28 @@ class App(ttk.Frame):
             self._toggle_row(iid)
             return "break"
         return None
+
+    def _toggle_all_files(self):
+        """Header box of the preview: untick every file if all are ticked,
+        otherwise tick them all."""
+        if not self.plan or self._renaming:
+            return
+        names = [old for old, _new in self.plan]
+        tick = not all(self.file_checked.get(n, True) for n in names)
+        for n in names:
+            self.file_checked[n] = tick
+        self._build_preview(quiet=True)
+
+    def _update_files_master(self):
+        """Header box of the preview: ☑ all files ticked, ☐ none, ▣ some."""
+        states = [self.file_checked.get(o, True) for o, _n in (self.plan or [])]
+        if states and all(states):
+            symbol = CHECKED
+        elif any(states):
+            symbol = MIXED
+        else:
+            symbol = UNCHECKED
+        self.preview_tree.heading("chk", text=symbol)
 
     def _toggle_file(self, iid):
         if not self.plan or self._renaming:
@@ -878,6 +903,7 @@ class App(ttk.Frame):
             else:
                 self.preview_tree.insert("", "end", iid=iid, values=(CHECKED, old, new))
         self.preview_tree.yview_moveto(yview)
+        self._update_files_master()
 
         changes = [(o, n) for o, n in self.plan if n and n != o]
         unchanged = sum(1 for o, n in self.plan if n == o)
