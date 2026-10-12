@@ -283,7 +283,7 @@ def apply_renames(folder, renames):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.19"
+VERSION = "1.20"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -813,6 +813,12 @@ def main():
     root.report_callback_exception = report_error
     root.geometry("820x720")
     root.minsize(640, 560)
+    try:
+        # The native macOS (Aqua) theme ignores left-aligned table headers;
+        # the "clam" theme honours them.
+        ttk.Style(root).theme_use("clam")
+    except tk.TclError:
+        pass
     App(root)
     root.mainloop()
 
