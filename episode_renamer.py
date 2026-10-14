@@ -321,7 +321,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.43"
+VERSION = "1.44"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -551,7 +551,7 @@ class App(ttk.Frame):
             # typing a path doesn't flash errors at every keystroke.
             self._auto_after = self.after(
                 AUTO_FETCH_DELAY_MS,
-                lambda: self._folder_error(f"Folder not found: {folder}"),
+                lambda: self._folder_error("Folder not found."),
             )
 
     def _folder_error(self, message):
@@ -898,7 +898,7 @@ class App(ttk.Frame):
             return
         if not folder or not os.path.isdir(folder):
             problem(
-                "showerror", "Invalid folder", f"Folder not found: {folder}", "error"
+                "showerror", "Invalid folder", "Folder not found.", "error"
             )
             return
         try:
