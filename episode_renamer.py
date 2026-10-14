@@ -321,7 +321,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.41"
+VERSION = "1.42"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -545,15 +545,16 @@ class App(ttk.Frame):
             )
 
     def _auto_fetch(self, folder):
-        """Guess the epguides URL from the folder path and fetch silently.
-
-        Nothing is shown and nothing changes unless the fetch finds titles."""
+        """Guess the epguides URL from the folder path, show it in the URL
+        field, then fetch the titles. A failure is reported in the status line."""
         self._auto_after = None
         slug = series_slug(folder)
         season = self._get_season(quiet=True)
         if not slug or season is None:
             return
-        self._start_fetch(f"{EPGUIDES_BASE}{slug}/", season, auto_folder=folder)
+        url = f"{EPGUIDES_BASE}{slug}/"
+        self.url_var.set(url)  # the field always shows the URL being fetched
+        self._start_fetch(url, season, auto_folder=folder)
 
     def _selected_titles(self):
         return [(ep, t) for ep, t in self.titles if self.checked.get(ep, True)]
