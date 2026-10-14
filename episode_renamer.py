@@ -321,7 +321,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.40"
+VERSION = "1.41"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -776,14 +776,22 @@ class App(ttk.Frame):
             self._show_fetching(False)
 
         if meta["auto_folder"] is not None:
-            # Automatic fetch: do nothing unless it found titles, and the
-            # folder hasn't changed (and no newer fetch started) meanwhile.
+            # Automatic fetch: ignore it if the folder has changed (or a newer
+            # fetch started) meanwhile; if it failed, say so in the status line.
             if (
-                kind != "ok"
-                or not msg[3]
-                or meta["token"] != self._fetch_token
+                meta["token"] != self._fetch_token
                 or self.folder_var.get().strip() != meta["auto_folder"]
             ):
+                return
+            if kind != "ok":
+                self._set_status(
+                    f"Couldn't fetch titles from {meta['url']}: {msg[2]}", "error"
+                )
+                return
+            if not msg[3]:
+                self._set_status(
+                    f"No episodes found for season {msg[2]} at {meta['url']}", "error"
+                )
                 return
             self.url_var.set(meta["url"])
             self._apply_titles(msg[2], msg[3])
@@ -791,14 +799,14 @@ class App(ttk.Frame):
 
         self.fetch_btn.config(state="normal")
         if kind == "err":
-            self._set_status("Fetch failed.", "error")
+            self._set_status(f"Fetch failed: {msg[2]}", "error")
             messagebox.showerror("Fetch failed", msg[2])
             return
 
         season, titles = msg[2], msg[3]
         self._apply_titles(season, titles)
         if not titles:
-            self._set_status("No episodes found.", "error")
+            self._set_status(f"No episodes found for season {season}.", "error")
             messagebox.showwarning(
                 "No episodes found",
                 f"Couldn't find any episodes for season {season} at that URL.",
