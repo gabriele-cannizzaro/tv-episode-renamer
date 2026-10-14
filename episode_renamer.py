@@ -321,7 +321,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.42"
+VERSION = "1.43"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -534,15 +534,37 @@ class App(ttk.Frame):
             self.after_cancel(self._auto_after)
             self._auto_after = None
         folder = self.folder_var.get().strip()
+        if self.status_var.get() == getattr(self, "_folder_msg", None):
+            self._set_status("")  # the old folder's error no longer applies
         self.file_checked = {}  # a different folder: tick every file again
         self._update_next_state()
         if folder and os.path.isdir(folder):
             self.season_var.set(str(guess_season(folder)))
+            self._check_folder_files(folder)
             if self.titles:  # titles already loaded: preview them for this folder
                 self._build_preview(quiet=True)
             self._auto_after = self.after(
                 AUTO_FETCH_DELAY_MS, lambda: self._auto_fetch(folder)
             )
+        elif folder:
+            # Not a folder (yet): report it once the path stops changing, so
+            # typing a path doesn't flash errors at every keystroke.
+            self._auto_after = self.after(
+                AUTO_FETCH_DELAY_MS,
+                lambda: self._folder_error(f"Folder not found: {folder}"),
+            )
+
+    def _folder_error(self, message):
+        self._folder_msg = message
+        self._set_status(message, "error")
+
+    def _check_folder_files(self, folder):
+        """Report in red if the folder can't be read or has no files in it."""
+        try:
+            if not list_files(folder):
+                self._folder_error("No files found in this folder.")
+        except OSError as exc:
+            self._folder_error(f"Can't read the folder: {exc}")
 
     def _auto_fetch(self, folder):
         """Guess the epguides URL from the folder path, show it in the URL
@@ -842,11 +864,11 @@ class App(ttk.Frame):
         instead of in a dialog.
         """
 
-        def problem(kind, title, message):
+        def problem(kind, title, message, status_kind=None):
             self._invalidate_preview()
-            if quiet:
-                self._set_status(message)
-            else:
+            if quiet or status_kind:
+                self._set_status(message, status_kind)
+            if not quiet:
                 getattr(messagebox, kind)(title, message)
 
         if self._renaming:  # don't touch the table mid-rename; refresh afterwards
@@ -875,15 +897,17 @@ class App(ttk.Frame):
             self._invalidate_preview()
             return
         if not folder or not os.path.isdir(folder):
-            problem("showerror", "Invalid folder", "Please choose a valid folder.")
+            problem(
+                "showerror", "Invalid folder", f"Folder not found: {folder}", "error"
+            )
             return
         try:
             files = list_files(folder)
         except OSError as exc:
-            problem("showerror", "Cannot read folder", str(exc))
+            problem("showerror", "Cannot read folder", f"Can't read the folder: {exc}", "error")
             return
         if not files:
-            problem("showinfo", "Empty folder", "No files were found in that folder.")
+            problem("showinfo", "Empty folder", "No files found in this folder.", "error")
             return
 
         titles = self._selected_titles()
