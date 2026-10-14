@@ -321,7 +321,7 @@ def apply_renames(folder, renames, progress=None):
 # --------------------------------------------------------------------------
 
 
-VERSION = "1.44"
+VERSION = "1.45"
 
 AUTO_FETCH_DELAY_MS = 600  # wait for a pasted/typed folder path to settle
 EPGUIDES_BASE = "https://epguides.com/"
@@ -731,7 +731,18 @@ class App(ttk.Frame):
         elif not os.path.isdir(new):
             self._set_status(f"Next season's folder not found: {new}", "error")
         else:
+            # The old season's titles don't apply any more: clear them (the
+            # preview is cleared too) while the new season's titles are fetched.
+            self._clear_titles()
             self.folder_var.set(new)  # also pre-sets the season and fetches the titles
+
+    def _clear_titles(self):
+        self.titles = []
+        self.checked = {}
+        self.fetched_season = None
+        self.titles_tree.delete(*self.titles_tree.get_children())
+        self._update_master_checkbox()
+        self._invalidate_preview()
 
     def on_fetch(self):
         url = self.url_var.get().strip()
