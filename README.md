@@ -17,7 +17,7 @@ Sample.Show.S03E02.mkv   →   3x02 - Second Thoughts.mkv
 ## Features
 
 **Fetching titles**
-- Paste or browse to a season folder and the app guesses the show from the folder path (the folder above the season folder, in Pascal case, without a leading "The") and builds the epguides URL, for example `.../Sample Show/03 - Sample Show` becomes `https://epguides.com/SampleShow/`. If that doesn't work, nothing happens and you can enter the URL yourself.
+- Paste or browse to a season folder and the app guesses the show from the folder path (the folder above the season folder, in Pascal case, without a leading "The" or "A") and builds the epguides URL, for example `.../Sample Show/03 - Sample Show` becomes `https://epguides.com/SampleShow/`. If that doesn't work, nothing happens and you can enter the URL yourself.
 - The season number is pre-filled from the folder name ("Season 3", "S03", "03 - Sample Show", and so on), or 1 if none is found.
 - Running times such as ` (90 mins)` are stripped from the titles.
 - A **Next** button jumps to the next season's folder (it is greyed out when that folder doesn't exist).
